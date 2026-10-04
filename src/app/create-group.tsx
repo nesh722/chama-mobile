@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { showAlert } from '../../services/alertService';
 import { createGroup } from '../../services/groupService';
 import { useAppTheme } from '../../context/ThemeContext';
@@ -37,44 +38,62 @@ export default function CreateGroupScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={[styles.container, { backgroundColor: colors.background }]} keyboardShouldPersistTaps="handled">
-        <View style={styles.container}>
-          <Text style={[styles.title, { color: colors.text }]}>Create Group</Text>
-          <TextInput
-            style={[styles.input, { borderColor: colors.border, color: colors.text }]}
-            placeholder="Group Name"
-            value={name}
-            onChangeText={setName}
-            placeholderTextColor={colors.placeholder}
-          />
-          <TextInput
-            style={[styles.input, { borderColor: colors.border, color: colors.text }]}
-            placeholder="Description (optional)"
-            value={description}
-            onChangeText={setDescription}
-            placeholderTextColor={colors.placeholder}
-          />
-          <TextInput
-            style={[styles.input, { borderColor: colors.border, color: colors.text }]}
-            placeholder="Contribution Amount (KES)"
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            placeholderTextColor={colors.placeholder}
-          />
+        <View style={styles.headerBlock}>
+          <Text style={[styles.title, { color: colors.text }]}>Create a group</Text>
+          <Text style={[styles.subtext, { color: colors.textMuted }]}>Set up contribution rules for your chama</Text>
+        </View>
 
-          <View style={styles.freqRow}>
+        <View style={[styles.card, { backgroundColor: colors.surface }]}>
+          <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.background }]}>
+            <Ionicons name="people-outline" size={18} color={colors.textMuted} style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Group Name"
+              value={name}
+              onChangeText={setName}
+              placeholderTextColor={colors.placeholder}
+            />
+          </View>
+
+          <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.background }]}>
+            <Ionicons name="document-text-outline" size={18} color={colors.textMuted} style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Description (optional)"
+              value={description}
+              onChangeText={setDescription}
+              placeholderTextColor={colors.placeholder}
+            />
+          </View>
+
+          <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.background }]}>
+            <Ionicons name="cash-outline" size={18} color={colors.textMuted} style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Contribution Amount (KES)"
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="numeric"
+              placeholderTextColor={colors.placeholder}
+            />
+          </View>
+
+          <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Contribution frequency</Text>
+          <View style={[styles.freqRow, { backgroundColor: colors.background, borderColor: colors.border }]}>
             {['weekly', 'monthly'].map((f) => (
               <TouchableOpacity
                 key={f}
                 style={[
                   styles.freqButton,
-                  { borderColor: colors.border },
-                  frequency === f && { backgroundColor: colors.primary, borderColor: colors.primary }
+                  frequency === f && { backgroundColor: colors.primary }
                 ]}
                 onPress={() => setFrequency(f)}
               >
-                <Text style={frequency === f ? [styles.freqTextActive, { color: colors.primaryText }] : { color: colors.text }}>
-                  {f}
+                <Text style={[
+                  styles.freqText,
+                  { color: frequency === f ? colors.primaryText : colors.textSecondary }
+                ]}>
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -96,12 +115,31 @@ export default function CreateGroupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 24, textAlign: 'center' },
-  input: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 16 },
-  freqRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  freqButton: { flex: 1, borderWidth: 1, padding: 10, borderRadius: 8, alignItems: 'center' },
-  freqTextActive: { fontWeight: '600' },
-  button: { padding: 14, borderRadius: 8, alignItems: 'center' },
+  container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  headerBlock: { marginBottom: 16, alignItems: 'center' },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 4, textAlign: 'center' },
+  subtext: { fontSize: 13, textAlign: 'center' },
+  card: { borderRadius: 16, padding: 20 },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    marginBottom: 14
+  },
+  inputIcon: { marginRight: 8 },
+  input: { flex: 1, paddingVertical: 12, fontSize: 15 },
+  fieldLabel: { fontSize: 13, marginBottom: 8 },
+  freqRow: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 4,
+    marginBottom: 20
+  },
+  freqButton: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  freqText: { fontWeight: '600', fontSize: 14 },
+  button: { padding: 14, borderRadius: 10, alignItems: 'center' },
   buttonText: { fontWeight: '600', fontSize: 16 }
 });

@@ -1,26 +1,29 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle } from 'react-native-svg';
+import { useAppTheme } from '../../context/ThemeContext';
 
 export default function Logo({ size = 72 }: { size?: number }) {
+  const { colors } = useAppTheme();
+  const radius = size * 0.32;
+  const ringRadius = size * 0.12;
+  const strokeWidth = size * 0.025;
+
   return (
     <View style={styles.container}>
-      <View style={[styles.circle, { width: size, height: size, borderRadius: size / 2 }]}>
-        <Ionicons name="wallet" size={size * 0.5} color="#fff" />
-      </View>
-      <Text style={styles.wordmark}>Chama App</Text>
-      <Text style={styles.tagline}>Save together, grow together</Text>
+      <Svg width={size} height={size} viewBox="0 0 100 100">
+        <Circle cx="50" cy="50" r={radius * (100 / size)} fill={colors.primary} />
+        <Circle cx={50 - 9} cy={50 - 5} r={ringRadius * (100 / size)} fill="none" stroke={colors.background} strokeWidth={strokeWidth * (100 / size)} />
+        <Circle cx={50 + 9} cy={50 - 5} r={ringRadius * (100 / size)} fill="none" stroke={colors.background} strokeWidth={strokeWidth * (100 / size)} />
+        <Circle cx="50" cy={50 + 10} r={ringRadius * (100 / size)} fill="none" stroke={colors.background} strokeWidth={strokeWidth * (100 / size)} />
+      </Svg>
+      <Text style={[styles.wordmark, { color: colors.text }]}>Chama App</Text>
+      <Text style={[styles.tagline, { color: colors.textMuted }]}>Save together, grow together</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { alignItems: 'center', marginBottom: 24 },
-  circle: {
-    backgroundColor: '#2563eb',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12
-  },
-  wordmark: { fontSize: 22, fontWeight: 'bold', color: '#111' },
-  tagline: { fontSize: 12, color: '#888', marginTop: 2 }
+  wordmark: { fontSize: 22, fontWeight: 'bold', marginTop: 12 },
+  tagline: { fontSize: 12, marginTop: 2 }
 });

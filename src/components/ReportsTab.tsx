@@ -47,6 +47,7 @@ const fileUri = `${FileSystem.cacheDirectory}${selectedType}-report.${format}`;
 
 const result = await FileSystem.downloadAsync(url, fileUri, { headers: { ...headers } });
 
+
       if (result.status !== 200) {
         throw new Error(`Server responded with status ${result.status}`);
       }
