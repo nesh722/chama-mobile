@@ -133,8 +133,8 @@ const result = await FileSystem.downloadAsync(url, fileUri, { headers: { ...head
                   <View key={rIdx} style={[styles.tableRow, { borderColor: colors.surfaceAlt }]}>
                     {row.map((cell, cIdx) => (
                       <Text key={cIdx} style={[styles.tableCell, { color: colors.textSecondary }]}>
-                        {String(cell ?? '-')}
-                      </Text>
+  {cell === null || cell === undefined || cell === '' ? '-' : String(cell)}
+</Text>
                     ))}
                   </View>
                 ))

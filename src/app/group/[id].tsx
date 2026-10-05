@@ -61,6 +61,7 @@ export default function GroupDetailsScreen() {
   const [myRole, setMyRole] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showTabMenu, setShowTabMenu] = useState(false);
 
   const [showLogForm, setShowLogForm] = useState(false);
   const [amount, setAmount] = useState('');
@@ -409,29 +410,15 @@ export default function GroupDetailsScreen() {
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{group.description}</Text>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[
-              styles.tabButton,
-              { backgroundColor: colors.surface },
-              activeTab === tab.key && { backgroundColor: colors.primary }
-            ]}
-            onPress={() => setActiveTab(tab.key)}
-          >
-            <Text
-              style={[
-                styles.tabButtonText,
-                { color: colors.textSecondary },
-                activeTab === tab.key && { color: colors.primaryText }
-              ]}
-            >
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+            <TouchableOpacity
+        style={[styles.tabDropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        onPress={() => setShowTabMenu(true)}
+      >
+        <Text style={[styles.tabDropdownText, { color: colors.text }]}>
+          {tabs.find((t) => t.key === activeTab)?.label}
+        </Text>
+        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+      </TouchableOpacity>
 
       <KeyboardAwareScrollView
   style={styles.container}
@@ -871,6 +858,41 @@ export default function GroupDetailsScreen() {
           </View>
         </View>
       </Modal>
+            <Modal
+        visible={showTabMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowTabMenu(false)}
+      >
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowTabMenu(false)}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Jump to section</Text>
+            {tabs.map((tab) => (
+              <TouchableOpacity
+                key={tab.key}
+                style={[
+                  styles.roleOption,
+                  { backgroundColor: activeTab === tab.key ? colors.primary : colors.surfaceAlt }
+                ]}
+                onPress={() => {
+                  setActiveTab(tab.key);
+                  setShowTabMenu(false);
+                }}
+              >
+                <Text style={[
+                  styles.roleOptionText,
+                  { color: activeTab === tab.key ? colors.primaryText : colors.primary }
+                ]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowTabMenu(false)}>
+              <Text style={[styles.modalCancelText, { color: colors.textMuted }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -882,9 +904,6 @@ const styles = StyleSheet.create({
   headerBlock: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
   title: { fontSize: 24, fontWeight: 'bold' },
   subtitle: { marginTop: 4 },
-  tabBar: { flexGrow: 0, paddingHorizontal: 12, marginTop: 12, marginBottom: 8 },
-  tabButton: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginRight: 8 },
-  tabButtonText: { fontSize: 13, fontWeight: '600' },
   detail: { fontSize: 14, marginBottom: 4, marginTop: 8 },
   sectionHeader: { fontSize: 18, fontWeight: '600', marginTop: 12, marginBottom: 10 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
@@ -921,5 +940,18 @@ const styles = StyleSheet.create({
   modalCancel: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   modalCancelText: { fontWeight: '600' },
   deleteGroupButton: { padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 24, marginBottom: 20 },
-  deleteGroupButtonText: { fontWeight: '600' }
+  deleteGroupButtonText: { fontWeight: '600' },
+    tabDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1
+  },
+  tabDropdownText: { fontSize: 15, fontWeight: '600' }
 });
