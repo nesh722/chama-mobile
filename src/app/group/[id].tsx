@@ -88,6 +88,7 @@ export default function GroupDetailsScreen() {
   const [settingTarget, setSettingTarget] = useState(false);
   const [targetHistory, setTargetHistory] = useState<any[]>([]);
   const [showTargetHistory, setShowTargetHistory] = useState(false);
+  const [showTargetMenu, setShowTargetMenu] = useState(false);
 
   const [showSavingsForm, setShowSavingsForm] = useState(false);
   const [savingsAmount, setSavingsAmount] = useState('');
@@ -524,15 +525,14 @@ export default function GroupDetailsScreen() {
 
             {activeTab === 'contributions' && (
               <View>
-                <View style={styles.sectionHeaderRow}>
-                  <Text style={[styles.sectionHeader, { color: colors.text }]}>Contributions</Text>
-                  <TouchableOpacity onPress={() => setShowLogForm(!showLogForm)}>
-                    <Text style={[styles.logToggle, { color: colors.primary }]}>
-                      {showLogForm ? 'Cancel' : '+ Log Contribution'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
+               <View style={styles.sectionHeaderRow}>
+  <Text style={[styles.sectionHeader, { color: colors.text }]}>Contributions</Text>
+  <TouchableOpacity onPress={() => setShowLogForm(!showLogForm)}>
+    <Text style={[styles.logToggle, { color: colors.primary }]}>
+      {showLogForm ? 'Cancel' : '+ Log Contribution'}
+    </Text>
+  </TouchableOpacity>
+</View>
                 {showLogForm && (
                   <View style={[styles.form, { backgroundColor: colors.surface }]}>
                     <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 12 }]}>
@@ -728,22 +728,13 @@ export default function GroupDetailsScreen() {
 
             {activeTab === 'target' && (
               <View>
-                     <View style={styles.sectionHeaderRow}>
-        <Text style={[styles.sectionHeader, { color: colors.text }]}>Savings Target</Text>
-        <View style={{ flexDirection: 'row', gap: 14 }}>
-          {canApprove && (
-            <TouchableOpacity onPress={() => setShowTargetForm(!showTargetForm)}>
-              <Text style={[styles.logToggle, { color: colors.primary }]}>
-                {showTargetForm ? 'Cancel' : savingsData?.targetSet ? 'Update Target' : '+ Set Target'}
-              </Text>
-            </TouchableOpacity>
-          )}
-          {canApprove && savingsData?.targetSet && (
-            <TouchableOpacity onPress={handleRemoveTarget}>
-              <Text style={[styles.logToggle, { color: colors.danger }]}>Remove Target</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+            <View style={styles.sectionHeaderRow}>
+<Text style={[styles.sectionHeader, { color: colors.text }]}>Savings Target</Text>
+        {canApprove && (
+          <TouchableOpacity onPress={() => setShowTargetMenu(true)} hitSlop={8}>
+            <Ionicons name="ellipsis-vertical" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
       </View>
 
                 {showTargetForm && (
@@ -942,6 +933,33 @@ export default function GroupDetailsScreen() {
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={styles.modalCancel} onPress={() => setShowTabMenu(false)}>
+              <Text style={[styles.modalCancelText, { color: colors.textMuted }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+            <Modal visible={showTargetMenu} transparent animationType="fade" onRequestClose={() => setShowTargetMenu(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowTargetMenu(false)}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Savings Target</Text>
+            <TouchableOpacity
+              style={[styles.roleOption, { backgroundColor: colors.surfaceAlt }]}
+              onPress={() => { setShowTargetMenu(false); setShowTargetForm(!showTargetForm); }}
+            >
+              <Text style={[styles.roleOptionText, { color: colors.primary }]}>
+                {savingsData?.targetSet ? 'Update Target' : 'Set Target'}
+              </Text>
+            </TouchableOpacity>
+            {savingsData?.targetSet && (
+              <TouchableOpacity
+                style={[styles.roleOption, { backgroundColor: colors.surfaceAlt }]}
+                onPress={() => { setShowTargetMenu(false); handleRemoveTarget(); }}
+              >
+                <Text style={[styles.roleOptionText, { color: colors.danger }]}>Remove Target</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowTargetMenu(false)}>
               <Text style={[styles.modalCancelText, { color: colors.textMuted }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
