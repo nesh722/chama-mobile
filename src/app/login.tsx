@@ -27,7 +27,11 @@ export default function LoginScreen() {
       await saveAuth(data.token, data.user);
       router.replace('/');
     } catch (err: any) {
-      showAlert('Login Failed', err.response?.data?.message || 'Invalid email or password');
+      if (!err.response) {
+    showAlert('Connection Error', 'Could not reach the server. Check your network connection.');
+      } else {
+        showAlert('Login Failed', err.response?.data?.message || 'Invalid email or password');
+      }
     } finally {
       setLoading(false);
     }

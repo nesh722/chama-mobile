@@ -11,6 +11,8 @@ import {
   getGroupDetails,
   getSavingsProgress,
   setSavingsTarget,
+  removeSavingsTarget,
+  getSavingsTargetHistory,
   getInviteToken,
   regenerateInvite
 } from '../../../services/groupService';
@@ -84,6 +86,8 @@ export default function GroupDetailsScreen() {
   const [showTargetForm, setShowTargetForm] = useState(false);
   const [targetAmount, setTargetAmount] = useState('');
   const [settingTarget, setSettingTarget] = useState(false);
+  const [targetHistory, setTargetHistory] = useState<any[]>([]);
+  const [showTargetHistory, setShowTargetHistory] = useState(false);
 
   const [showSavingsForm, setShowSavingsForm] = useState(false);
   const [savingsAmount, setSavingsAmount] = useState('');
@@ -125,6 +129,9 @@ export default function GroupDetailsScreen() {
 
       const savingsListData = await getGroupSavings(id as string);
       setSavingsList(savingsListData.savings);
+
+      const historyData = await getSavingsTargetHistory(id as string);
+      setTargetHistory(historyData.history);
 
       const user = await getUser();
       if (user) {
@@ -267,6 +274,22 @@ export default function GroupDetailsScreen() {
     } finally {
       setSettingTarget(false);
     }
+  };
+
+  const handleRemoveTarget = () => {
+    showConfirm(
+      'Remove Savings Target',
+      'This will remove the savings target for this group. Members will no longer see on-track/behind status. Continue?',
+      async () => {
+        try {
+          await removeSavingsTarget(id as string);
+          showAlert('Success', 'Savings target removed');
+          loadDetails();
+        } catch (err: any) {
+          showAlert('Error', err.response?.data?.message || err.message);
+        }
+      }
+    );
   };
 
   const handleLogSavings = async () => {
@@ -705,16 +728,23 @@ export default function GroupDetailsScreen() {
 
             {activeTab === 'target' && (
               <View>
-                <View style={styles.sectionHeaderRow}>
-                  <Text style={[styles.sectionHeader, { color: colors.text }]}>Savings Target</Text>
-                  {canApprove && (
-                    <TouchableOpacity onPress={() => setShowTargetForm(!showTargetForm)}>
-                      <Text style={[styles.logToggle, { color: colors.primary }]}>
-                        {showTargetForm ? 'Cancel' : savingsData?.targetSet ? 'Update Target' : '+ Set Target'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                     <View style={styles.sectionHeaderRow}>
+        <Text style={[styles.sectionHeader, { color: colors.text }]}>Savings Target</Text>
+        <View style={{ flexDirection: 'row', gap: 14 }}>
+          {canApprove && (
+            <TouchableOpacity onPress={() => setShowTargetForm(!showTargetForm)}>
+              <Text style={[styles.logToggle, { color: colors.primary }]}>
+                {showTargetForm ? 'Cancel' : savingsData?.targetSet ? 'Update Target' : '+ Set Target'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {canApprove && savingsData?.targetSet && (
+            <TouchableOpacity onPress={handleRemoveTarget}>
+              <Text style={[styles.logToggle, { color: colors.danger }]}>Remove Target</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
 
                 {showTargetForm && (
                   <View style={[styles.form, { backgroundColor: colors.surface }]}>
@@ -762,6 +792,30 @@ export default function GroupDetailsScreen() {
                   </>
                 ) : (
                   <Text style={[styles.empty, { color: colors.textMuted }]}>No savings target set for this group yet.</Text>
+                )}
+
+                {targetHistory.length > 0 && (
+                  <View style={{ marginTop: 20 }}>
+                    <TouchableOpacity onPress={() => setShowTargetHistory(!showTargetHistory)}>
+                      <Text style={[styles.logToggle, { color: colors.primary }]}>
+                        {showTargetHistory ? 'Hide Target History' : `View Target History (${targetHistory.length})`}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {showTargetHistory && targetHistory.map((h: any) => (
+                      <View key={h.id} style={[styles.contribRow, { borderBottomColor: colors.border }]}>
+                        <View>
+                          <Text style={[styles.contribName, { color: colors.text }]}>KES {h.savings_target} per cycle</Text>
+                          <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+                            {new Date(h.target_start_date).toLocaleDateString()} – {new Date(h.target_end_date).toLocaleDateString()}
+                          </Text>
+                        </View>
+                        <Text style={[styles.contribStatus, { color: colors.textMuted }]}>
+                          {h.ended_reason === 'replaced' ? 'REPLACED' : 'REMOVED'}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                 )}
 
                 <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>

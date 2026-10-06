@@ -29,6 +29,18 @@ export const setSavingsTarget = async (groupId, savings_target) => {
   return response.data;
 };
 
+export const removeSavingsTarget = async (groupId) => {
+  const api = await authAxios();
+  const response = await api.delete(`/groups/${groupId}/savings-target`);
+  return response.data;
+};
+
+export const getSavingsTargetHistory = async (groupId) => {
+  const api = await authAxios();
+  const response = await api.get(`/groups/${groupId}/savings-target-history`);
+  return response.data;
+};
+
 export const getSavingsProgress = async (groupId) => {
   const api = await authAxios();
   const response = await api.get(`/groups/${groupId}/savings-progress`);
