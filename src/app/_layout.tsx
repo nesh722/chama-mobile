@@ -13,6 +13,7 @@ function InnerLayout() {
     <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       <Stack screenOptions={{ headerShown: false }}>
+         <Stack.Screen name="(tabs)" options={{ headerBackTitle: 'My Groups' }} />
         <Stack.Screen name="register" options={{ headerShown: true, title: 'Register', headerBackTitle: '' }} />
         <Stack.Screen name="forgot-password" options={{ headerShown: true, title: 'Forgot Password', headerBackTitle: '' }} />
         <Stack.Screen name="reset-password" options={{ headerShown: true, title: 'Reset Password', headerBackTitle: '' }} />

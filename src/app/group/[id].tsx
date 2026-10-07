@@ -21,7 +21,7 @@ import { decideLoan, getGroupLoans, recordRepayment, requestLoan } from '../../.
 import { getRotationStatus, markPayout, setupRotation } from '../../../services/payoutService';
 import { getUser } from '../../../services/tokenService';
 import { removeMember, deleteGroup } from '../../../services/groupService';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../../context/ThemeContext';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
@@ -428,6 +428,19 @@ export default function GroupDetailsScreen() {
   ];
 
   return (
+ <>
+   <Stack.Screen
+  options={{
+    headerTitleAlign: 'center',
+    headerLeft: () => (
+      <TouchableOpacity onPress={() => router.replace('/(tabs)/groups')} style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Ionicons name="chevron-back" size={24} color={colors.primary} />
+        <Text style={{ color: colors.primary, fontSize: 17, marginLeft: 2 }}>My Groups</Text>
+      </TouchableOpacity>
+    )
+  }}
+/>
+
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={styles.headerBlock}>
         <Text style={[styles.title, { color: colors.text }]}>{group.name}</Text>
@@ -729,13 +742,19 @@ export default function GroupDetailsScreen() {
             {activeTab === 'target' && (
               <View>
             <View style={styles.sectionHeaderRow}>
-<Text style={[styles.sectionHeader, { color: colors.text }]}>Savings Target</Text>
-        {canApprove && (
-          <TouchableOpacity onPress={() => setShowTargetMenu(true)} hitSlop={8}>
-            <Ionicons name="ellipsis-vertical" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-        )}
-      </View>
+  <Text style={[styles.sectionHeader, { color: colors.text }]}>Savings Target</Text>
+  {showTargetForm ? (
+    <TouchableOpacity onPress={() => setShowTargetForm(false)}>
+      <Text style={[styles.logToggle, { color: colors.primary }]}>Cancel</Text>
+    </TouchableOpacity>
+  ) : (
+    canApprove && (
+      <TouchableOpacity onPress={() => setShowTargetMenu(true)} hitSlop={8}>
+        <Ionicons name="ellipsis-vertical" size={20} color={colors.textMuted} />
+      </TouchableOpacity>
+    )
+  )}
+</View>
 
                 {showTargetForm && (
                   <View style={[styles.form, { backgroundColor: colors.surface }]}>
@@ -966,6 +985,7 @@ export default function GroupDetailsScreen() {
         </TouchableOpacity>
       </Modal>
     </View>
+    </>
   );
 }
 

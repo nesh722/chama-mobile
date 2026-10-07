@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { changePassword } from '../../services/authService';
 import { showAlert } from '../../services/alertService';
@@ -37,6 +37,18 @@ export default function ChangePasswordScreen() {
   };
 
   return (
+ <>
+    <Stack.Screen
+      options={{
+        headerLeft: () => (
+          <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons name="chevron-back" size={24} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontSize: 17, marginLeft: 2 }}>Profile</Text>
+          </TouchableOpacity>
+        )
+      }}
+    />
+
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={[styles.container, { backgroundColor: colors.background }]} keyboardShouldPersistTaps="handled">
         <View style={styles.iconBlock}>
@@ -88,6 +100,7 @@ export default function ChangePasswordScreen() {
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
+    </>
   );
 }
 
