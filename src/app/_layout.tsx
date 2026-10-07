@@ -5,6 +5,18 @@ import { Stack } from 'expo-router';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { ThemeProviderCustom, useAppTheme } from '../../context/ThemeContext';
 
+import * as Notifications from 'expo-notifications';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+     shouldShowBanner: true,
+    shouldShowList: true,
+  })
+});
+
 SplashScreen.preventAutoHideAsync();
 
 function InnerLayout() {

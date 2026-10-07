@@ -7,6 +7,7 @@ import { login } from '../../services/authService';
 import { saveAuth } from '../../services/tokenService';
 import { useAppTheme } from '../../context/ThemeContext';
 import Logo from '../components/logo';
+import { registerForPushNotifications } from '../../services/pushService';
 
 export default function LoginScreen() {
   const { colors } = useAppTheme();
@@ -24,8 +25,9 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const data = await login(email, password);
-      await saveAuth(data.token, data.user);
-      router.replace('/');
+await saveAuth(data.token, data.user);
+registerForPushNotifications(); // fire and forget -- don't block navigation on this
+router.replace('/');
     } catch (err: any) {
       if (!err.response) {
     showAlert('Connection Error', 'Could not reach the server. Check your network connection.');

@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +33,18 @@ export default function CreateGroupScreen() {
   };
 
   return (
+<>
+    <Stack.Screen
+      options={{
+        headerLeft: () => (
+          <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons name="chevron-back" size={24} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontSize: 17, marginLeft: 2 }}>Back</Text>
+          </TouchableOpacity>
+        )
+      }}
+    />
+
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -111,6 +123,7 @@ export default function CreateGroupScreen() {
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
+    </>
   );
 }
 

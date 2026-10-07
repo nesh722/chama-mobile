@@ -38,7 +38,7 @@ export default function ChangeEmailScreen() {
         headerLeft: () => (
           <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Ionicons name="chevron-back" size={24} color={colors.primary} />
-            <Text style={{ color: colors.primary, fontSize: 17, marginLeft: 2 }}>Profile</Text>
+            <Text style={{ color: colors.primary, fontSize: 17, marginLeft: 2 }}>Back</Text>
           </TouchableOpacity>
         )
       }}
