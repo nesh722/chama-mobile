@@ -91,3 +91,9 @@ export const previewGroupByToken = async (token) => {
   const response = await api.get(`/groups/preview/${token}`);
   return response.data;
 };
+
+export const updateGroup = async (groupId, name, description, contribution_amount, contribution_frequency) => {
+  const api = await authAxios();
+  const response = await api.patch(`/groups/${groupId}/update`, { name, description, contribution_amount, contribution_frequency });
+  return response.data;
+};

@@ -1,6 +1,7 @@
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal,  Platform, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal,  Platform, ScrollView, Share, StyleSheet, TouchableWithoutFeedback,
+  Keyboard, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import QRCode from 'react-native-qrcode-svg';
 import * as Clipboard from 'expo-clipboard';
@@ -14,7 +15,8 @@ import {
   removeSavingsTarget,
   getSavingsTargetHistory,
   getInviteToken,
-  regenerateInvite
+  regenerateInvite,
+  updateGroup,
 } from '../../../services/groupService';
 import { logSavings, getGroupSavings } from '../../../services/savingsService';
 import { decideLoan, getGroupLoans, recordRepayment, requestLoan } from '../../../services/loanService';
@@ -89,6 +91,13 @@ export default function GroupDetailsScreen() {
   const [targetHistory, setTargetHistory] = useState<any[]>([]);
   const [showTargetHistory, setShowTargetHistory] = useState(false);
   const [showTargetMenu, setShowTargetMenu] = useState(false);
+
+  const [showEditGroupModal, setShowEditGroupModal] = useState(false);
+const [editName, setEditName] = useState('');
+const [editDescription, setEditDescription] = useState('');
+const [editAmount, setEditAmount] = useState('');
+const [editFrequency, setEditFrequency] = useState<'weekly' | 'monthly'>('monthly');
+const [editSubmitting, setEditSubmitting] = useState(false);
 
   const [showSavingsForm, setShowSavingsForm] = useState(false);
   const [savingsAmount, setSavingsAmount] = useState('');
@@ -353,6 +362,32 @@ export default function GroupDetailsScreen() {
     );
   };
 
+  const handleOpenEditGroup = () => {
+  setEditName(group.name);
+  setEditDescription(group.description || '');
+  setEditAmount(String(group.contribution_amount));
+  setEditFrequency(group.contribution_frequency);
+  setShowEditGroupModal(true);
+};
+
+const handleUpdateGroup = async () => {
+  if (!editName || !editAmount) {
+    showAlert('Missing Info', 'Name and contribution amount are required');
+    return;
+  }
+  setEditSubmitting(true);
+  try {
+    await updateGroup(id as string, editName, editDescription, parseFloat(editAmount), editFrequency);
+    showAlert('Success', 'Group updated successfully');
+    setShowEditGroupModal(false);
+    loadDetails();
+  } catch (err: any) {
+    showAlert('Error', err.response?.data?.message || err.message);
+  } finally {
+    setEditSubmitting(false);
+  }
+};
+
   const handleShowInvite = async () => {
     const next = !showInvite;
     setShowInvite(next);
@@ -440,13 +475,20 @@ export default function GroupDetailsScreen() {
     )
   }}
 />
-
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={styles.headerBlock}>
-        <Text style={[styles.title, { color: colors.text }]}>{group.name}</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{group.description}</Text>
+            <View style={styles.headerBlock}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.title, { color: colors.text }]}>{group.name}</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{group.description}</Text>
+          </View>
+          {canApprove && (
+            <TouchableOpacity onPress={handleOpenEditGroup} hitSlop={8} style={{ paddingTop: 4 }}>
+              <Ionicons name="create-outline" size={22} color={colors.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
-
             <TouchableOpacity
         style={[styles.tabDropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}
         onPress={() => setShowTabMenu(true)}
@@ -984,6 +1026,137 @@ export default function GroupDetailsScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+           <Modal
+  visible={showEditGroupModal}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setShowEditGroupModal(false)}
+>
+  <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ width: '100%', alignItems: 'center' }}
+      >
+        <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ flexGrow: 1 }}
+          >
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              Edit Group
+            </Text>
+
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                  color: colors.text,
+                  marginTop: 12,
+                },
+              ]}
+              placeholder="Group Name"
+              value={editName}
+              onChangeText={setEditName}
+              placeholderTextColor={colors.placeholder}
+            />
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                  color: colors.text,
+                },
+              ]}
+              placeholder="Description (optional)"
+              value={editDescription}
+              onChangeText={setEditDescription}
+              placeholderTextColor={colors.placeholder}
+            />
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                  color: colors.text,
+                },
+              ]}
+              placeholder="Contribution Amount (KES)"
+              value={editAmount}
+              onChangeText={setEditAmount}
+              keyboardType="numeric"
+              placeholderTextColor={colors.placeholder}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+              {(['weekly', 'monthly'] as const).map((f) => (
+                <TouchableOpacity
+                  key={f}
+                  style={[
+                    {
+                      flex: 1,
+                      borderWidth: 1,
+                      padding: 10,
+                      borderRadius: 8,
+                      alignItems: 'center',
+                      borderColor: colors.border,
+                    },
+                    editFrequency === f && {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                    },
+                  ]}
+                  onPress={() => setEditFrequency(f)}
+                >
+                  <Text
+                    style={{
+                      color:
+                        editFrequency === f
+                          ? colors.primaryText
+                          : colors.text,
+                      fontWeight: '600',
+                    }}
+                  >
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.submitButton, { backgroundColor: colors.primary }]}
+              onPress={handleUpdateGroup}
+              disabled={editSubmitting}
+            >
+              <Text
+                style={[styles.submitButtonText, { color: colors.primaryText }]}
+              >
+                {editSubmitting ? 'Saving...' : 'Save Changes'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancel}
+              onPress={() => setShowEditGroupModal(false)}
+            >
+              <Text
+                style={[styles.modalCancelText, { color: colors.textMuted }]}
+              >
+                Cancel
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
+  </TouchableWithoutFeedback>
+</Modal>;
     </View>
     </>
   );
