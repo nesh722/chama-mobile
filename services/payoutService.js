@@ -17,3 +17,9 @@ export const markPayout = async (group_id) => {
   const response = await api.post('/payouts/mark-payout', { group_id });
   return response.data;
 };
+
+export const getRotationHistory = async (groupId) => {
+  const api = await authAxios();
+  const response = await api.get(`/payouts/history/${groupId}`);
+  return response.data;
+};

@@ -1,4 +1,5 @@
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import { FlatList, Alert, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +10,7 @@ export default function NotificationsScreen() {
   const { colors } = useAppTheme();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   const loadNotifications = async () => {
     try {
@@ -26,6 +28,14 @@ export default function NotificationsScreen() {
       loadNotifications();
     }, [])
   );
+
+  const handleBack = () => {
+  if (router.canGoBack()) {
+    router.back();
+  } else {
+    router.replace('/');
+  }
+};
 
   const handlePress = async (item: any) => {
     if (item.is_read) return;
@@ -64,14 +74,19 @@ export default function NotificationsScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-                <View style={styles.headerRow}>
-          <Text style={[styles.header, { color: colors.text }]}>Notifications</Text>
-          {notifications.length > 0 && (
-            <TouchableOpacity onPress={handleClearAll}>
-              <Text style={[styles.clearText, { color: colors.primary }]}>Clear All</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+               <View style={styles.headerRow}>
+  <View style={styles.headerLeft}>
+    <TouchableOpacity onPress={handleBack} hitSlop={10} style={styles.backButton}>
+      <Ionicons name="chevron-back" size={26} color={colors.primary} />
+    </TouchableOpacity>
+    <Text style={[styles.header, { color: colors.text }]}>Notifications</Text>
+  </View>
+  {notifications.length > 0 && (
+    <TouchableOpacity onPress={handleClearAll}>
+      <Text style={[styles.clearText, { color: colors.primary }]}>Clear All</Text>
+    </TouchableOpacity>
+  )}
+</View>
         <FlatList
           data={notifications}
           keyExtractor={(item: any) => item.id.toString()}
@@ -118,5 +133,7 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4 },
   empty: { textAlign: 'center', marginTop: 40 },
     headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  clearText: { fontSize: 14, fontWeight: '600' }
+  clearText: { fontSize: 14, fontWeight: '600' },
+  headerLeft: { flexDirection: 'row', alignItems: 'center' },
+backButton: { marginLeft: -6, marginRight: 4 },
 });

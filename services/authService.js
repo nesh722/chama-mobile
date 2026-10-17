@@ -1,7 +1,10 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
-import { getToken } from './tokenService';
+import { clearAuth, getToken } from './tokenService';
 import { Platform } from 'react-native';
+import { router } from 'expo-router';
+
+let isLoggingOut = false; 
 
 export const login = async (email, password) => {
   const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password });
@@ -14,12 +17,28 @@ export const register = async (full_name, email, phone, password) => {
 };
 
 // Creates an axios instance that automatically attaches the saved JWT token
+
 export const authAxios = async () => {
   const token = await getToken();
-  return axios.create({
+  const instance = axios.create({
     baseURL: API_BASE_URL,
     headers: token ? { Authorization: `Bearer ${token}` } : {}
   });
+
+  instance.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      if (error.response?.status === 401 && !isLoggingOut) {
+        isLoggingOut = true;
+        await clearAuth();
+        router.replace('/login');
+        setTimeout(() => { isLoggingOut = false; }, 1000);
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return instance;
 };
 export const getProfile = async () => {
   const api = await authAxios();

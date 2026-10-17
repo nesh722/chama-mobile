@@ -20,7 +20,7 @@ import {
 } from '../../../services/groupService';
 import { logSavings, getGroupSavings } from '../../../services/savingsService';
 import { decideLoan, getGroupLoans, recordRepayment, requestLoan } from '../../../services/loanService';
-import { getRotationStatus, markPayout, setupRotation } from '../../../services/payoutService';
+import { getRotationStatus, markPayout, setupRotation, getRotationHistory } from '../../../services/payoutService';
 import { getUser } from '../../../services/tokenService';
 import { removeMember, deleteGroup } from '../../../services/groupService';
 import { Stack, useRouter } from 'expo-router';
@@ -28,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../../context/ThemeContext';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import ReportsTab from '../../components/ReportsTab';
+
 
 type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'reports';
 
@@ -84,6 +85,8 @@ export default function GroupDetailsScreen() {
 
   const [settingUpRotation, setSettingUpRotation] = useState(false);
   const [markingPayout, setMarkingPayout] = useState(false);
+  const [rotationHistory, setRotationHistory] = useState<any[]>([]);
+const [showRotationHistory, setShowRotationHistory] = useState(false);
 
   const [showTargetForm, setShowTargetForm] = useState(false);
   const [targetAmount, setTargetAmount] = useState('');
@@ -119,6 +122,16 @@ const [editSubmitting, setEditSubmitting] = useState(false);
     return due < today;
   };
 
+  const rotationComplete = rotation.length > 0 && rotation.every((r: any) => r.has_received);
+
+  const rotationCycles: any[] = Object.values(
+  rotationHistory.reduce((acc: any, row: any) => {
+    if (!acc[row.cycle_number]) acc[row.cycle_number] = { cycle: row.cycle_number, rows: [] };
+    acc[row.cycle_number].rows.push(row);
+    return acc;
+  }, {})
+).sort((a: any, b: any) => b.cycle - a.cycle);
+
   const loadDetails = async () => {
     try {
       const data = await getGroupDetails(id as string);
@@ -133,6 +146,9 @@ const [editSubmitting, setEditSubmitting] = useState(false);
 
       const rotationData = await getRotationStatus(id as string);
       setRotation(rotationData.rotation);
+
+      const rotationHistoryData = await getRotationHistory(id as string);
+setRotationHistory(rotationHistoryData.history);
 
       const progressData = await getSavingsProgress(id as string);
       setSavingsData(progressData);
@@ -234,8 +250,10 @@ const [editSubmitting, setEditSubmitting] = useState(false);
 
   const handleSetupRotation = () => {
     showConfirm(
-      'Set Up Rotation',
-      'This will set the rotation order to the current member list order. Continue?',
+      rotationComplete ? 'Start New Cycle' : 'Set Up Rotation',
+    rotationComplete
+      ? 'This will save the completed rotation to history and start a new one using the current member order. Continue?'
+      : 'This will set the rotation order to the current member list order. Continue?',
       async () => {
         setSettingUpRotation(true);
         try {
@@ -746,13 +764,13 @@ const handleUpdateGroup = async () => {
               <View>
                 <View style={styles.sectionHeaderRow}>
                   <Text style={[styles.sectionHeader, { color: colors.text }]}>Payout Rotation</Text>
-                  {canApprove && rotation.length === 0 && (
-                    <TouchableOpacity onPress={handleSetupRotation} disabled={settingUpRotation}>
-                      <Text style={[styles.logToggle, { color: colors.primary }]}>
-                        {settingUpRotation ? 'Setting up...' : 'Set Up Rotation'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
+                  {canApprove && (rotation.length === 0 || rotationComplete) && (
+  <TouchableOpacity onPress={handleSetupRotation} disabled={settingUpRotation}>
+    <Text style={[styles.logToggle, { color: colors.primary }]}>
+      {settingUpRotation ? 'Setting up...' : rotation.length === 0 ? 'Set Up Rotation' : 'Start New Cycle'}
+    </Text>
+  </TouchableOpacity>
+)}
                 </View>
 
                 {rotation.map((r: any) => (
@@ -778,6 +796,48 @@ const handleUpdateGroup = async () => {
                     </Text>
                   </TouchableOpacity>
                 )}
+
+                {rotationCycles.length > 0 && (
+  <View style={{ marginTop: 20 }}>
+    <TouchableOpacity onPress={() => setShowRotationHistory(!showRotationHistory)}>
+      <Text style={[styles.logToggle, { color: colors.primary }]}>
+        {showRotationHistory
+          ? 'Hide Payout History'
+          : `View Payout History (${rotationCycles.length} past ${rotationCycles.length === 1 ? 'cycle' : 'cycles'})`}
+      </Text>
+    </TouchableOpacity>
+
+    {showRotationHistory && rotationCycles.map((c: any) => (
+      <View key={c.cycle} style={{ marginTop: 12 }}>
+        <Text style={[styles.sectionHeader, { color: colors.text, fontSize: 15 }]}>
+          Cycle {c.cycle}
+        </Text>
+        {c.rows.map((r: any) => (
+          <View key={r.id} style={[styles.contribRow, { borderBottomColor: colors.border }]}>
+            <View>
+              <Text style={[styles.contribName, { color: colors.text }]}>
+                {r.rotation_order}. {r.full_name}
+              </Text>
+              {r.received_at && (
+                <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+                  {new Date(r.received_at).toLocaleDateString()}
+                </Text>
+              )}
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              {r.has_received && r.amount != null && (
+                <Text style={[styles.contribAmount, { color: colors.text }]}>KES {r.amount}</Text>
+              )}
+              <Text style={[styles.contribStatus, { color: r.has_received ? colors.success : colors.textMuted }]}>
+                {r.has_received ? 'RECEIVED' : 'NOT PAID'}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    ))}
+  </View>
+)}
               </View>
             )}
 
@@ -1156,7 +1216,7 @@ const handleUpdateGroup = async () => {
       </KeyboardAvoidingView>
     </View>
   </TouchableWithoutFeedback>
-</Modal>;
+</Modal>
     </View>
     </>
   );
