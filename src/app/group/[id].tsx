@@ -75,31 +75,33 @@ export default function GroupDetailsScreen() {
   const [rotationHistory, setRotationHistory] = useState<any[]>([]);
 const [showRotationHistory, setShowRotationHistory] = useState(false);
 
-  const [showTargetForm, setShowTargetForm] = useState(false);
-  const [targetAmount, setTargetAmount] = useState('');
-  const [settingTarget, setSettingTarget] = useState(false);
-  const [targetHistory, setTargetHistory] = useState<any[]>([]);
-  const [showTargetHistory, setShowTargetHistory] = useState(false);
-  const [showTargetMenu, setShowTargetMenu] = useState(false);
+const [showTargetForm, setShowTargetForm] = useState(false);
+const [targetAmount, setTargetAmount] = useState('');
+const [settingTarget, setSettingTarget] = useState(false);
+const [targetHistory, setTargetHistory] = useState<any[]>([]);
+const [showTargetHistory, setShowTargetHistory] = useState(false);
+const [showTargetMenu, setShowTargetMenu] = useState(false);
 
-  const [showEditGroupModal, setShowEditGroupModal] = useState(false);
+const [showEditGroupModal, setShowEditGroupModal] = useState(false);
 const [editName, setEditName] = useState('');
 const [editDescription, setEditDescription] = useState('');
 const [editAmount, setEditAmount] = useState('');
 const [editFrequency, setEditFrequency] = useState<'weekly' | 'monthly'>('monthly');
 const [editSubmitting, setEditSubmitting] = useState(false);
 
-  const [showSavingsForm, setShowSavingsForm] = useState(false);
-  const [savingsAmount, setSavingsAmount] = useState('');
-  const [savingsNote, setSavingsNote] = useState('');
-  const [savingsSubmitting, setSavingsSubmitting] = useState(false);
+const [showSavingsForm, setShowSavingsForm] = useState(false);
+const [savingsAmount, setSavingsAmount] = useState('');
+const [savingsNote, setSavingsNote] = useState('');
+const [savingsSubmitting, setSavingsSubmitting] = useState(false);
 
-  const [roleModalMember, setRoleModalMember] = useState<{ id: number; name: string; currentRole: string } | null>(null);
+const [roleModalMember, setRoleModalMember] = useState<{ id: number; name: string; currentRole: string } | null>(null);
 
-  const [showInvite, setShowInvite] = useState(false);
-  const [inviteToken, setInviteToken] = useState<string | null>(null);
-  const [loadingInvite, setLoadingInvite] = useState(false);
-  const [remindingId, setRemindingId] = useState<number | 'all' | null>(null);
+const [showInvite, setShowInvite] = useState(false);
+const [inviteToken, setInviteToken] = useState<string | null>(null);
+const [loadingInvite, setLoadingInvite] = useState(false);
+const [remindingId, setRemindingId] = useState<number | 'all' | null>(null);
+const [showOwingModal, setShowOwingModal] = useState(false);
+const [remindedIds, setRemindedIds] = useState<number[]>([]);
 
   const isOverdue = (loan: any) => {
     if (loan.status !== 'approved' || !loan.due_date) return false;
@@ -190,18 +192,29 @@ const handleLogContribution = async () => {
   }
 };
 
-const handleRemind = async (memberId?: number, name?: string) => {
+const handleRemind = async (memberId?: number) => {
   setRemindingId(memberId ?? 'all');
   try {
     const result = await sendContributionReminder(id as string, memberId);
-    showAlert(
-      'Reminder sent',
-      memberId
-        ? `${name} has been reminded.`
-        : `${result.sent} member${result.sent === 1 ? '' : 's'} reminded.${result.skipped ? ` ${result.skipped} skipped (already reminded in the last 24 hours).` : ''}`
-    );
+    if (memberId) {
+      setRemindedIds((prev) => [...prev, memberId]);
+    } else {
+      setRemindedIds((prev) => Array.from(new Set([...prev, ...owingMembers.map((m) => m.id)])));
+      showAlert(
+        'Reminders sent',
+        `${result.sent} member${result.sent === 1 ? '' : 's'} reminded.${result.skipped ? ` ${result.skipped} skipped (already reminded in the last 24 hours).` : ''}`
+      );
+    }
   } catch (err: any) {
-    showAlert('Could not send', err.response?.data?.message || err.message);
+    if (err.response?.status === 429) {
+      // The server says they were already reminded in the last 24 hours, so the list should show that
+      setRemindedIds((prev) =>
+        Array.from(new Set([...prev, ...(memberId ? [memberId] : owingMembers.map((m) => m.id))]))
+      );
+      showAlert('Already reminded', err.response?.data?.message || 'Already reminded in the last 24 hours');
+    } else {
+      showAlert('Could not send', err.response?.data?.message || err.message);
+    }
   } finally {
     setRemindingId(null);
   }
@@ -499,6 +512,8 @@ const owingMembers = canApprove
       .filter(Boolean) as { id: number; name: string; paid: number; remaining: number }[])
   : [];
 
+const pendingReminders = owingMembers.filter((m) => !remindedIds.includes(m.id));
+
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'contributions', label: 'Contributions' },
@@ -662,40 +677,33 @@ const owingMembers = canApprove
                 )}
 
 {canApprove && owingMembers.length > 0 && (
-  <View style={[styles.form, { backgroundColor: colors.surface }]}>
-    <View style={styles.sectionHeaderRow}>
-      <Text style={[styles.contribName, { color: colors.text }]}>Still to pay this cycle</Text>
-      <TouchableOpacity
-        disabled={remindingId !== null}
-        onPress={() =>
-          showConfirm(
-            'Remind everyone',
-            `Send a reminder to ${owingMembers.length} member${owingMembers.length === 1 ? '' : 's'} who haven't paid in full?`,
-            () => handleRemind()
-          )
-        }
-      >
-        <Text style={[styles.logToggle, { color: colors.primary }]}>
-          {remindingId === 'all' ? 'Sending...' : 'Remind all'}
-        </Text>
-      </TouchableOpacity>
+  <TouchableOpacity
+    style={[styles.owingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+    onPress={() => setShowOwingModal(true)}
+    activeOpacity={0.7}
+  >
+    <View style={[styles.owingIcon, { backgroundColor: colors.primary + '1a' }]}>
+      <Ionicons name="notifications-outline" size={20} color={colors.primary} />
     </View>
+    <View style={{ flex: 1 }}>
+      <Text style={[styles.contribName, { color: colors.text }]}>Yet to pay this cycle</Text>
+      <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+        KES {owingMembers.reduce((sum, m) => sum + m.remaining, 0).toLocaleString()} outstanding
+      </Text>
+    </View>
+    <View style={[styles.owingBadge, { backgroundColor: colors.danger }]}>
+      <Text style={styles.owingBadgeText}>{owingMembers.length}</Text>
+    </View>
+    <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+  </TouchableOpacity>
+)}
 
-    {owingMembers.map((m) => (
-      <View key={m.id} style={[styles.memberRow, { borderBottomColor: colors.border }]}>
-        <View>
-          <Text style={[styles.memberName, { color: colors.text }]}>{m.name}</Text>
-          <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
-            {m.paid > 0 ? `KES ${m.remaining} remaining` : `KES ${m.remaining} due`}
-          </Text>
-        </View>
-        <TouchableOpacity disabled={remindingId !== null} onPress={() => handleRemind(m.id, m.name)} hitSlop={8}>
-          <Text style={[styles.logToggle, { color: colors.primary }]}>
-            {remindingId === m.id ? 'Sending...' : 'Remind'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    ))}
+{canApprove && owingMembers.length === 0 && members.length > 1 && (
+  <View style={[styles.owingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View style={[styles.owingIcon, { backgroundColor: colors.success + '22' }]}>
+      <Ionicons name="checkmark" size={20} color={colors.success} />
+    </View>
+    <Text style={[styles.contribName, { color: colors.text, flex: 1 }]}>Everyone else has paid in full this cycle</Text>
   </View>
 )}
 
@@ -1285,6 +1293,90 @@ const owingMembers = canApprove
     </View>
   </TouchableWithoutFeedback>
 </Modal>
+
+<Modal visible={showOwingModal} transparent animationType="slide" onRequestClose={() => setShowOwingModal(false)}>
+  <View style={styles.sheetOverlay}>
+    <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowOwingModal(false)} />
+    <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
+      <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+
+      <View style={styles.sheetHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.sheetTitle, { color: colors.text }]}>Yet to pay</Text>
+          <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+            {formatCycleLabel(group.current_cycle)}
+          </Text>
+        </View>
+        <TouchableOpacity onPress={() => setShowOwingModal(false)} hitSlop={10}>
+          <Ionicons name="close" size={24} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false}>
+        {owingMembers.length === 0 && (
+          <Text style={[styles.empty, { color: colors.textMuted }]}>Everyone has paid in full.</Text>
+        )}
+        {owingMembers.map((m) => {
+          const reminded = remindedIds.includes(m.id);
+          const initials = m.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+          return (
+            <View key={m.id} style={[styles.owingRow, { borderBottomColor: colors.border }]}>
+              <View style={[styles.avatar, { backgroundColor: colors.primary + '1a' }]}>
+                <Text style={[styles.avatarText, { color: colors.primary }]}>{initials}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.memberName, { color: colors.text }]}>{m.name}</Text>
+                <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+                  {m.paid > 0
+                    ? `Paid KES ${m.paid.toLocaleString()} · KES ${m.remaining.toLocaleString()} remaining`
+                    : `KES ${m.remaining.toLocaleString()} due`}
+                </Text>
+              </View>
+              {reminded ? (
+                <Text style={[styles.remindPillText, { color: colors.success }]}>Reminded ✓</Text>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.remindPill, { borderColor: colors.primary }]}
+                  disabled={remindingId !== null}
+                  onPress={() => handleRemind(m.id)}
+                >
+                  <Text style={[styles.remindPillText, { color: colors.primary }]}>
+                    {remindingId === m.id ? 'Sending...' : 'Remind'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {owingMembers.length > 0 && (
+        <TouchableOpacity
+          style={[
+            styles.remindAllButton,
+            { backgroundColor: pendingReminders.length === 0 ? colors.border : colors.primary }
+          ]}
+          disabled={remindingId !== null || pendingReminders.length === 0}
+          onPress={() =>
+            showConfirm(
+              'Remind everyone',
+              `Send a reminder to ${pendingReminders.length} member${pendingReminders.length === 1 ? '' : 's'}?`,
+              () => handleRemind()
+            )
+          }
+        >
+          <Text style={[styles.submitButtonText, { color: pendingReminders.length === 0 ? colors.textMuted : colors.primaryText }]}>
+            {remindingId === 'all'
+              ? 'Sending...'
+              : pendingReminders.length === 0
+                ? 'Everyone reminded'
+                : `Remind all (${pendingReminders.length})`}
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  </View>
+</Modal>
     </View>
     </>
   );
@@ -1346,5 +1438,20 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1
   },
-  tabDropdownText: { fontSize: 15, fontWeight: '600' }
+  tabDropdownText: { fontSize: 15, fontWeight: '600' },
+  owingCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, borderWidth: 1, marginTop: 12, marginBottom: 8 },
+owingIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+owingBadge: { minWidth: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+owingBadgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 28, maxHeight: '80%' },
+sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, marginBottom: 12 },
+sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
+sheetTitle: { fontSize: 20, fontWeight: 'bold' },
+owingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1 },
+avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+avatarText: { fontWeight: '700', fontSize: 14 },
+remindPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, borderWidth: 1 },
+remindPillText: { fontSize: 13, fontWeight: '600' },
+remindAllButton: { padding: 14, borderRadius: 12, alignItems: 'center', marginTop: 14 }
 });
