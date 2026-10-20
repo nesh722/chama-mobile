@@ -11,6 +11,8 @@ import { getMyActivity } from '../../../services/activityService';
 import { getMyNotifications } from '../../../services/notificationService';
 import { getMySavings } from '../../../services/savingsService';
 import { useAppTheme } from '../../../context/ThemeContext';
+import { formatCycleLabel } from '../../../utils/formatCycleLabel';
+import { ACTIVITY_ICONS } from '../../../utils/activityIcons';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -19,21 +21,6 @@ function getGreeting() {
   return 'Good evening';
 }
 
-const ACTIVITY_ICONS: Record<string, string> = {
-  joined_group: 'people',
-  created_group: 'add-circle',
-  deleted_group: 'trash',
-  removed_from_group: 'remove-circle',
-  role_changed: 'shield-checkmark',
-  logged_contribution: 'wallet',
-  logged_savings: 'cash-outline',
-  requested_loan: 'cash',
-  loan_approved: 'checkmark-circle',
-  loan_rejected: 'close-circle',
-  loan_repayment: 'card',
-  payout_received: 'gift',
-  target_set: 'flag'
-};
 
 export default function HomeScreen() {
   const { colors, isDark, setMode } = useAppTheme();
@@ -86,13 +73,13 @@ export default function HomeScreen() {
       );
 
       const total = contribData.contributions
-        .filter((c: any) => c.status === 'paid')
+        .filter((c: any) =>c.status === 'paid' || c.status === 'partial')
         .reduce((sum: number, c: any) => sum + parseFloat(c.amount), 0);
       setTotalContributed(total);
 
       const grouped: Record<string, number> = {};
       contribData.contributions
-        .filter((c: any) => c.status === 'paid')
+        .filter((c: any) => c.status === 'paid' || c.status === 'partial')
         .forEach((c: any) => {
           grouped[c.group_name] = (grouped[c.group_name] || 0) + parseFloat(c.amount);
         });
@@ -233,9 +220,11 @@ export default function HomeScreen() {
                 onPress={() => router.push(`/group/${d.groupId}`)}
               >
                 <Text style={[styles.rowCardTitle, { color: colors.text }]}>{d.groupName}</Text>
-                <Text style={[styles.rowCardSubtitle, { color: colors.textSecondary }]}>
-                  KES {d.amount} due for {d.currentCycle}
-                </Text>
+               <Text style={[styles.rowCardSubtitle, { color: colors.textSecondary }]}>
+  {d.paidSoFar > 0
+    ? `KES ${d.remaining} remaining for ${formatCycleLabel(d.currentCycle)}`
+    : `KES ${d.amount} due for ${formatCycleLabel(d.currentCycle)}`}
+</Text>
               </TouchableOpacity>
             ))}
           </View>

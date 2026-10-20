@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "631117452694",
+    "project_id": "chama-app-72ae0",
+    "storage_bucket": "chama-app-72ae0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:631117452694:android:4d9d83ca1aea1ace7a79b7",
+        "android_client_info": {
+          "package_name": "com.victormunene.chamaapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBtCKuPGywPMlArDjsEE6yv4nmAF4KO7wQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

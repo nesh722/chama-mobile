@@ -6,7 +6,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import QRCode from 'react-native-qrcode-svg';
 import * as Clipboard from 'expo-clipboard';
 import { showAlert, showConfirm } from '../../../services/alertService';
-import { getGroupContributions, logContribution } from '../../../services/contributionService';
+import { getGroupContributions, logContribution, sendContributionReminder } from '../../../services/contributionService';
 import {
   changeRole,
   getGroupDetails,
@@ -28,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../../context/ThemeContext';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import ReportsTab from '../../components/ReportsTab';
+import { formatCycleLabel } from '../../../utils/formatCycleLabel';
 
 
 type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'reports';
@@ -35,21 +36,7 @@ type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'r
 
 const APP_SCHEME = 'mobile';
 
-function getCurrentCycleLabel(frequency: string) {
-  const now = new Date();
-  if (frequency === 'weekly') {
-    const target = new Date(now.valueOf());
-    const dayNr = (now.getUTCDay() + 6) % 7;
-    target.setUTCDate(target.getUTCDate() - dayNr + 3);
-    const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
-    const week = 1 + Math.round(((target.getTime() - firstThursday.getTime()) / 86400000 - 3) / 7);
-    return `${target.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
-  } else {
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    return `${year}-${month}`;
-  }
-}
+
 export default function GroupDetailsScreen() {
   const { colors } = useAppTheme();
   const { id } = useLocalSearchParams();
@@ -112,6 +99,7 @@ const [editSubmitting, setEditSubmitting] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [loadingInvite, setLoadingInvite] = useState(false);
+  const [remindingId, setRemindingId] = useState<number | 'all' | null>(null);
 
   const isOverdue = (loan: any) => {
     if (loan.status !== 'approved' || !loan.due_date) return false;
@@ -134,32 +122,32 @@ const [editSubmitting, setEditSubmitting] = useState(false);
 
   const loadDetails = async () => {
     try {
-      const data = await getGroupDetails(id as string);
+  const data = await getGroupDetails(id as string);
       setGroup(data.group);
       setMembers(data.members);
 
-      const contribData = await getGroupContributions(id as string);
+  const contribData = await getGroupContributions(id as string);
       setContributions(contribData.contributions);
 
-      const loanData = await getGroupLoans(id as string);
+  const loanData = await getGroupLoans(id as string);
       setLoans(loanData.loans);
 
-      const rotationData = await getRotationStatus(id as string);
+  const rotationData = await getRotationStatus(id as string);
       setRotation(rotationData.rotation);
 
-      const rotationHistoryData = await getRotationHistory(id as string);
-setRotationHistory(rotationHistoryData.history);
+  const rotationHistoryData = await getRotationHistory(id as string);
+  setRotationHistory(rotationHistoryData.history);
 
-      const progressData = await getSavingsProgress(id as string);
+  const progressData = await getSavingsProgress(id as string);
       setSavingsData(progressData);
 
-      const savingsListData = await getGroupSavings(id as string);
+  const savingsListData = await getGroupSavings(id as string);
       setSavingsList(savingsListData.savings);
 
-      const historyData = await getSavingsTargetHistory(id as string);
+  const historyData = await getSavingsTargetHistory(id as string);
       setTargetHistory(historyData.history);
 
-      const user = await getUser();
+  const user = await getUser();
       if (user) {
         setMyUserId(user.id);
         const me = data.members.find((m: any) => m.id === user.id);
@@ -178,15 +166,20 @@ setRotationHistory(rotationHistoryData.history);
     }, [id])
   );
 
-  const handleLogContribution = async () => {
+const handleLogContribution = async () => {
   if (!amount) {
     showAlert('Missing Info', 'Enter an amount');
     return;
   }
   setSubmitting(true);
   try {
-    await logContribution(id as string, parseFloat(amount));
-    showAlert('Success', 'Contribution logged successfully');
+  const result = await logContribution(id as string, parseFloat(amount));
+  showAlert(
+  'Success',
+  result.remaining > 0
+    ? `Logged KES ${amount}. KES ${result.remaining} is still remaining for this cycle.`
+    : 'Contribution complete for this cycle'
+);
     setAmount('');
     setShowLogForm(false);
     loadDetails();
@@ -196,7 +189,25 @@ setRotationHistory(rotationHistoryData.history);
     setSubmitting(false);
   }
 };
-  const handleRequestLoan = async () => {
+
+const handleRemind = async (memberId?: number, name?: string) => {
+  setRemindingId(memberId ?? 'all');
+  try {
+    const result = await sendContributionReminder(id as string, memberId);
+    showAlert(
+      'Reminder sent',
+      memberId
+        ? `${name} has been reminded.`
+        : `${result.sent} member${result.sent === 1 ? '' : 's'} reminded.${result.skipped ? ` ${result.skipped} skipped (already reminded in the last 24 hours).` : ''}`
+    );
+  } catch (err: any) {
+    showAlert('Could not send', err.response?.data?.message || err.message);
+  } finally {
+    setRemindingId(null);
+  }
+};
+
+const handleRequestLoan = async () => {
     if (!loanAmount) {
       showAlert('Missing Info', 'Enter a loan amount');
       return;
@@ -470,6 +481,23 @@ const handleUpdateGroup = async () => {
   }
 
   const canApprove = myRole === 'treasurer' || myRole === 'chair';
+  
+const myCycleRow = contributions.find((c: any) => c.user_id === myUserId && c.cycle_period === group.current_cycle);
+const cycleTarget = parseFloat(group.contribution_amount);
+const cyclePaid = myCycleRow ? parseFloat(myCycleRow.amount) : 0;
+const cycleRemaining = myCycleRow?.status === 'paid' ? 0 : Math.max(cycleTarget - cyclePaid, 0);
+
+const owingMembers = canApprove
+  ? (members
+      .filter((m: any) => m.id !== myUserId)
+      .map((m: any) => {
+        const row = contributions.find((c: any) => c.user_id === m.id && c.cycle_period === group.current_cycle);
+        if (row?.status === 'paid') return null;
+        const paid = row ? parseFloat(row.amount) : 0;
+        return { id: m.id as number, name: m.full_name as string, paid, remaining: Math.max(cycleTarget - paid, 0) };
+      })
+      .filter(Boolean) as { id: number; name: string; paid: number; remaining: number }[])
+  : [];
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' },
@@ -609,7 +637,9 @@ const handleUpdateGroup = async () => {
                 {showLogForm && (
                   <View style={[styles.form, { backgroundColor: colors.surface }]}>
                     <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 12 }]}>
-  Logging for cycle: {getCurrentCycleLabel(group.contribution_frequency)}
+  {cycleRemaining === 0
+    ? `Cycle complete (KES ${cyclePaid} paid)`
+    : `Paid KES ${cyclePaid} of KES ${cycleTarget} · KES ${cycleRemaining} remaining`}
 </Text>
                     <TextInput
                       style={[styles.input, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
@@ -631,22 +661,60 @@ const handleUpdateGroup = async () => {
                   </View>
                 )}
 
+{canApprove && owingMembers.length > 0 && (
+  <View style={[styles.form, { backgroundColor: colors.surface }]}>
+    <View style={styles.sectionHeaderRow}>
+      <Text style={[styles.contribName, { color: colors.text }]}>Still to pay this cycle</Text>
+      <TouchableOpacity
+        disabled={remindingId !== null}
+        onPress={() =>
+          showConfirm(
+            'Remind everyone',
+            `Send a reminder to ${owingMembers.length} member${owingMembers.length === 1 ? '' : 's'} who haven't paid in full?`,
+            () => handleRemind()
+          )
+        }
+      >
+        <Text style={[styles.logToggle, { color: colors.primary }]}>
+          {remindingId === 'all' ? 'Sending...' : 'Remind all'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+
+    {owingMembers.map((m) => (
+      <View key={m.id} style={[styles.memberRow, { borderBottomColor: colors.border }]}>
+        <View>
+          <Text style={[styles.memberName, { color: colors.text }]}>{m.name}</Text>
+          <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+            {m.paid > 0 ? `KES ${m.remaining} remaining` : `KES ${m.remaining} due`}
+          </Text>
+        </View>
+        <TouchableOpacity disabled={remindingId !== null} onPress={() => handleRemind(m.id, m.name)} hitSlop={8}>
+          <Text style={[styles.logToggle, { color: colors.primary }]}>
+            {remindingId === m.id ? 'Sending...' : 'Remind'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    ))}
+  </View>
+)}
+
                 {contributions.map((item: any) => (
                   <View key={item.id} style={[styles.contribRow, { borderBottomColor: colors.border }]}>
                     <View>
                       <Text style={[styles.contribName, { color: colors.text }]}>{item.full_name}</Text>
-                      <Text style={[styles.contribCycle, { color: colors.textMuted }]}>{item.cycle_period}</Text>
+                     <Text style={[styles.contribCycle, { color: colors.textMuted }]}>{formatCycleLabel(item.cycle_period)}</Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={[styles.contribAmount, { color: colors.text }]}>KES {item.amount}</Text>
-                      <Text
-                        style={[
-                          styles.contribStatus,
-                          { color: item.status === 'paid' ? colors.success : colors.danger }
-                        ]}
-                      >
-                        {item.status}
-                      </Text>
+                      <Text style={[styles.contribStatus, { color: item.status === 'paid' ? colors.success : item.status === 'partial' ? colors.warning : colors.danger }]}>
+  {item.status}
+</Text>
+{item.status === 'partial' && (
+  <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+    KES {Math.max(parseFloat(group.contribution_amount) - parseFloat(item.amount), 0)} remaining
+  </Text>
+)}
                     </View>
                   </View>
                 ))}

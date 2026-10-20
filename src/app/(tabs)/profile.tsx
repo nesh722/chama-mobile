@@ -17,6 +17,7 @@ import { useAppTheme } from '../../../context/ThemeContext';
 import { showAlert, showConfirm } from '../../../services/alertService';
 import { deleteAccount, getProfile, uploadAvatar } from '../../../services/authService';
 import { clearAuth } from '../../../services/tokenService';
+import { unregisterPushToken } from '../../../services/pushService';
 
 function getInitials(name: string) {
   if (!name) return '?';
@@ -78,11 +79,12 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = () => {
-    showConfirm('Log Out', 'Are you sure you want to log out?', async () => {
-      await clearAuth();
-      router.replace('/login');
-    });
-  };
+  showConfirm('Log Out', 'Are you sure you want to log out?', async () => {
+    await unregisterPushToken(); // must run before clearAuth, which deletes the login token
+    await clearAuth();
+    router.replace('/login');
+  });
+};
 
   const handleDeleteAccount = () => {
     showConfirm(

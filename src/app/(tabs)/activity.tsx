@@ -6,23 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getMyActivity } from '../../../services/activityService';
 import { useAppTheme } from '../../../context/ThemeContext';
-
-const ICONS: Record<string, string> = {
-  joined_group: 'people',
-  created_group: 'add-circle',
-  deleted_group: 'trash',
-  left_group: 'exit',
-  removed_from_group: 'remove-circle',
-  role_changed: 'shield-checkmark',
-  logged_contribution: 'wallet',
-  requested_loan: 'cash',
-  loan_approved: 'checkmark-circle',
-  loan_rejected: 'close-circle',
-  loan_repayment: 'card',
-  rotation_setup: 'repeat',
-  payout_received: 'gift',
-  target_set: 'flag'
-};
+import { ACTIVITY_ICONS } from '../../../utils/activityIcons';
 
 export default function ActivityScreen() {
   const { colors } = useAppTheme();
@@ -63,7 +47,7 @@ export default function ActivityScreen() {
           renderItem={({ item }: any) => (
             <View style={[styles.row, { borderBottomColor: colors.border }]}>
               <View style={[styles.iconWrap, { backgroundColor: colors.surface }]}>
-                <Ionicons name={(ICONS[item.action_type] || 'ellipse') as any} size={18} color={colors.primary} />
+                <Ionicons name={(ACTIVITY_ICONS[item.action_type] || 'ellipse') as any} size={18} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.description, { color: colors.text }]}>{item.description}</Text>

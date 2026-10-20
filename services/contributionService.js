@@ -31,3 +31,9 @@ export const getMyDueStatus = async () => {
   const response = await api.get('/contributions/my-due-status');
   return response.data;
 };
+
+export const sendContributionReminder = async (group_id, user_id) => {
+  const api = await authAxios();
+  const response = await api.post('/contributions/remind', user_id ? { group_id, user_id } : { group_id });
+  return response.data;
+};

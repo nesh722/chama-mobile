@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.victormunene.chamaapp",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -25,6 +26,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      ["expo-notifications", { "icon": "./assets/images/android-icon-monochrome.png", "color": "#2563EB" }],
       "expo-router",
       [
         "expo-splash-screen",

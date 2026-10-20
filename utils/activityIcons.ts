@@ -1,0 +1,19 @@
+// One icon per activity type the backend logs. Anything not listed falls back to a dot.
+export const ACTIVITY_ICONS: Record<string, string> = {
+  joined_group: 'people',
+  created_group: 'add-circle',
+  deleted_group: 'trash',
+  removed_from_group: 'remove-circle',
+  role_changed: 'shield-checkmark',
+  logged_contribution: 'wallet',
+  logged_savings: 'trending-up',
+  requested_loan: 'cash',
+  loan_approved: 'checkmark-circle',
+  loan_rejected: 'close-circle',
+  loan_repayment: 'card',
+  payout_received: 'gift',
+  savings_target_set: 'flag',
+  savings_target_updated: 'flag',
+  savings_target_removed: 'flag-outline',
+  sent_reminder: 'notifications-outline',
+};
