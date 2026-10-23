@@ -30,7 +30,8 @@ export default function HomeScreen() {
   const [groupCount, setGroupCount] = useState(0);
   const [activeLoanCount, setActiveLoanCount] = useState(0);
   const [totalContributed, setTotalContributed] = useState(0);
-  const [contributionsByGroup, setContributionsByGroup] = useState<{ groupName: string; total: number }[]>([]);
+  const [contributionsByGroup, setContributionsByGroup] = useState<
+  { groupName: string; total: number; contributions: number; extra: number }[]>([]);
   const [extraSavingsByGroup, setExtraSavingsByGroup] = useState<{ groupName: string; total: number }[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [dueStatus, setDueStatus] = useState<any[]>([]);
@@ -72,20 +73,32 @@ export default function HomeScreen() {
         loansData.loans.filter((l: any) => l.status === 'approved' || l.status === 'requested').length
       );
 
-      const total = contribData.contributions
-        .filter((c: any) =>c.status === 'paid' || c.status === 'partial')
-        .reduce((sum: number, c: any) => sum + parseFloat(c.amount), 0);
-      setTotalContributed(total);
+      // Paid and partial payments both count, since a partial payment is real money in the group
+const counted = contribData.contributions.filter((c: any) => c.status === 'paid' || c.status === 'partial');
+const contributionTotal = counted.reduce((sum: number, c: any) => sum + parseFloat(c.amount), 0);
+const extraTotal = savingsData.savings.reduce((sum: number, s: any) => sum + parseFloat(s.amount), 0);
 
-      const grouped: Record<string, number> = {};
-      contribData.contributions
-        .filter((c: any) => c.status === 'paid' || c.status === 'partial')
-        .forEach((c: any) => {
-          grouped[c.group_name] = (grouped[c.group_name] || 0) + parseFloat(c.amount);
-        });
-      setContributionsByGroup(Object.entries(grouped).map(([groupName, total]) => ({ groupName, total })));
+// "Total Saved" is contributions plus extra savings
+setTotalContributed(contributionTotal + extraTotal);
 
-      const groupedSavings: Record<string, number> = {};
+const grouped: Record<string, { contributions: number; extra: number }> = {};
+counted.forEach((c: any) => {
+  grouped[c.group_name] = grouped[c.group_name] || { contributions: 0, extra: 0 };
+  grouped[c.group_name].contributions += parseFloat(c.amount);
+});
+savingsData.savings.forEach((s: any) => {
+  grouped[s.group_name] = grouped[s.group_name] || { contributions: 0, extra: 0 };
+  grouped[s.group_name].extra += parseFloat(s.amount);
+});
+setContributionsByGroup(
+  Object.entries(grouped).map(([groupName, v]) => ({
+    groupName,
+    contributions: v.contributions,
+    extra: v.extra,
+    total: v.contributions + v.extra
+  }))
+);
+const groupedSavings: Record<string, number> = {};
       savingsData.savings.forEach((s: any) => {
         groupedSavings[s.group_name] = (groupedSavings[s.group_name] || 0) + parseFloat(s.amount);
       });
@@ -167,32 +180,21 @@ export default function HomeScreen() {
         {contributionsByGroup.length > 1 && (
           <View style={styles.section}>
             <Text style={[styles.sectionHeader, { color: colors.text }]}>Savings by Group</Text>
-            {contributionsByGroup.map((g) => (
-              <View key={g.groupName} style={[styles.rowCard, { backgroundColor: colors.surface }]}>
-                <View style={styles.progressHeaderRow}>
-                  <Text style={[styles.rowCardTitle, { color: colors.text }]}>{g.groupName}</Text>
-                  <Text style={[styles.rowCardTitle, { color: colors.primary }]}>
-                    KES {g.total.toLocaleString()}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {extraSavingsByGroup.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionHeader, { color: colors.text }]}>Extra Savings</Text>
-            {extraSavingsByGroup.map((g) => (
-              <View key={g.groupName} style={[styles.rowCard, { backgroundColor: colors.surface }]}>
-                <View style={styles.progressHeaderRow}>
-                  <Text style={[styles.rowCardTitle, { color: colors.text }]}>{g.groupName}</Text>
-                  <Text style={[styles.rowCardTitle, { color: colors.primary }]}>
-                    KES {g.total.toLocaleString()}
-                  </Text>
-                </View>
-              </View>
-            ))}
+           {contributionsByGroup.map((g) => (
+  <View key={g.groupName} style={[styles.rowCard, { backgroundColor: colors.surface }]}>
+    <View style={styles.progressHeaderRow}>
+      <Text style={[styles.rowCardTitle, { color: colors.text }]}>{g.groupName}</Text>
+      <Text style={[styles.rowCardTitle, { color: colors.primary }]}>
+        KES {g.total.toLocaleString()}
+      </Text>
+    </View>
+    {g.extra > 0 && (
+      <Text style={[styles.rowCardSubtitle, { color: colors.textMuted, marginTop: 0 }]}>
+        KES {g.contributions.toLocaleString()} contributions + KES {g.extra.toLocaleString()} extra
+      </Text>
+    )}
+  </View>
+))}
           </View>
         )}
 
