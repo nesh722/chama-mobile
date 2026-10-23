@@ -7,12 +7,12 @@ import { router } from 'expo-router';
 let isLoggingOut = false; 
 
 export const login = async (email, password) => {
-  const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password });
+  const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password },  { timeout: 30000 });
   return response.data;
 };
 
 export const register = async (full_name, email, phone, password) => {
-  const response = await axios.post(`${API_BASE_URL}/auth/register`, { full_name, email, phone, password });
+  const response = await axios.post(`${API_BASE_URL}/auth/register`, { full_name, email, phone, password }, { timeout: 30000 });
   return response.data;
 };
 
@@ -22,6 +22,7 @@ export const authAxios = async () => {
   const token = await getToken();
   const instance = axios.create({
     baseURL: API_BASE_URL,
+    timeout: 30000,
     headers: token ? { Authorization: `Bearer ${token}` } : {}
   });
 
@@ -46,12 +47,12 @@ export const getProfile = async () => {
   return response.data;
 };
 export const requestPasswordReset = async (email) => {
-  const response = await axios.post(`${API_BASE_URL}/auth/request-password-reset`, { email });
+  const response = await axios.post(`${API_BASE_URL}/auth/request-password-reset`, { email },  { timeout: 30000 });
   return response.data;
 };
 
 export const resetPassword = async (token, new_password) => {
-  const response = await axios.post(`${API_BASE_URL}/auth/reset-password`, { token, new_password });
+  const response = await axios.post(`${API_BASE_URL}/auth/reset-password`, { token, new_password }, { timeout: 30000 });
   return response.data;
 };
 

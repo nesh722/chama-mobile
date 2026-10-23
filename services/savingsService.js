@@ -1,8 +1,8 @@
 import { authAxios } from './authService';
 
-export const logSavings = async (group_id, amount, note) => {
+export const logSavings = async (group_id, amount, note, idempotency_key) => {
   const api = await authAxios();
-  const response = await api.post('/savings/log', { group_id, amount, note });
+  const response = await api.post('/savings/log', { group_id, amount, note,  idempotency_key}, { timeout: 15000 });
   return response.data;
 };
 

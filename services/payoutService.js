@@ -12,9 +12,9 @@ export const getRotationStatus = async (groupId) => {
   return response.data;
 };
 
-export const markPayout = async (group_id) => {
+export const markPayout = async (group_id, idempotency_key) => {
   const api = await authAxios();
-  const response = await api.post('/payouts/mark-payout', { group_id });
+  const response = await api.post('/payouts/mark-payout', { group_id, idempotency_key }, { timeout: 15000});
   return response.data;
 };
 

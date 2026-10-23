@@ -1,8 +1,8 @@
 import { authAxios } from './authService';
 
-export const logContribution = async (group_id, amount, user_id) => {
+export const logContribution = async (group_id, amount, idempotency_key) => {
   const api = await authAxios();
-  const response = await api.post('/contributions/log', { group_id, amount, user_id });
+  const response = await api.post('/contributions/log', { group_id, amount, idempotency_key }, { timeout: 15000 });
   return response.data;
 };
 

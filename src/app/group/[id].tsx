@@ -1,35 +1,41 @@
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal,  Platform, ScrollView, Share, StyleSheet, TouchableWithoutFeedback,
-  Keyboard, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import QRCode from 'react-native-qrcode-svg';
 import * as Clipboard from 'expo-clipboard';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView, Modal, Platform, ScrollView, Share, StyleSheet,
+  Text, TextInput, TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
+} from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import QRCode from 'react-native-qrcode-svg';
+import { useAppTheme } from '../../../context/ThemeContext';
 import { showAlert, showConfirm } from '../../../services/alertService';
 import { getGroupContributions, logContribution, sendContributionReminder } from '../../../services/contributionService';
 import {
   changeRole,
+  deleteGroup,
   getGroupDetails,
-  getSavingsProgress,
-  setSavingsTarget,
-  removeSavingsTarget,
-  getSavingsTargetHistory,
   getInviteToken,
+  getSavingsProgress,
+  getSavingsTargetHistory,
   regenerateInvite,
+  removeMember,
+  removeSavingsTarget,
+  setSavingsTarget,
   updateGroup,
 } from '../../../services/groupService';
-import { logSavings, getGroupSavings } from '../../../services/savingsService';
 import { decideLoan, getGroupLoans, recordRepayment, requestLoan } from '../../../services/loanService';
-import { getRotationStatus, markPayout, setupRotation, getRotationHistory } from '../../../services/payoutService';
+import { getRotationHistory, getRotationStatus, markPayout, setupRotation } from '../../../services/payoutService';
+import { getGroupSavings, logSavings } from '../../../services/savingsService';
 import { getUser } from '../../../services/tokenService';
-import { removeMember, deleteGroup } from '../../../services/groupService';
-import { Stack, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useAppTheme } from '../../../context/ThemeContext';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { formatCycleLabel, getCycleProgress } from '../../../utils/formatCycleLabel';
 import ReportsTab from '../../components/ReportsTab';
-import { formatCycleLabel } from '../../../utils/formatCycleLabel';
-
+import { keyFor, isNoAnswer, PendingKey } from '../../../utils/requestKey';
 
 type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'reports';
 
@@ -103,6 +109,14 @@ const [remindingId, setRemindingId] = useState<number | 'all' | null>(null);
 const [showOwingModal, setShowOwingModal] = useState(false);
 const [remindedIds, setRemindedIds] = useState<number[]>([]);
 
+
+
+const pendingContribution = useRef<PendingKey>(null);
+const pendingSavings = useRef<PendingKey>(null);
+const pendingRepay = useRef<PendingKey>(null);
+const pendingPayout = useRef<PendingKey>(null);
+const [repayingId, setRepayingId] = useState<number | null>(null);
+
   const isOverdue = (loan: any) => {
     if (loan.status !== 'approved' || !loan.due_date) return false;
     const due = new Date(loan.due_date);
@@ -168,25 +182,48 @@ const [remindedIds, setRemindedIds] = useState<number[]>([]);
     }, [id])
   );
 
+  const reportActionError = (err: any, pending: { current: PendingKey }, what: string) => {
+  if (err.response && err.response.status !== 409) {
+    pending.current = null; // the server said no, so nothing was recorded
+    showAlert('Error', err.response.data?.message || err.message);
+  } else if (err.response) {
+    showAlert('Please wait', err.response.data?.message || 'This is still being processed.');
+  } else if (isNoAnswer(err)) {
+    showAlert(
+      'Could not confirm',
+      `We couldn't confirm whether your ${what} went through. Check the list before trying again. Retrying the same action is safe and won't be counted twice.`
+    );
+    loadDetails();
+  } else {
+    showAlert('Error', err.message || 'Something went wrong');
+  }
+};
+
 const handleLogContribution = async () => {
-  if (!amount) {
+  const value = parseFloat(amount);
+  if (!value || value <= 0) {
     showAlert('Missing Info', 'Enter an amount');
     return;
   }
+  if (submitting) return;
   setSubmitting(true);
+  const key = keyFor(pendingContribution, `contribution:${id}:${value}`);
   try {
-  const result = await logContribution(id as string, parseFloat(amount));
-  showAlert(
-  'Success',
-  result.remaining > 0
-    ? `Logged KES ${amount}. KES ${result.remaining} is still remaining for this cycle.`
-    : 'Contribution complete for this cycle'
-);
+    const result = await logContribution(id as string, value, key);
+    pendingContribution.current = null;
+    showAlert(
+      result.duplicate ? 'Already recorded' : 'Success',
+      result.duplicate
+        ? 'This payment was already recorded earlier, so it was not added again.'
+        : result.remaining > 0
+          ? `Logged KES ${value}. KES ${result.remaining} is still remaining for this cycle.`
+          : 'Contribution complete for this cycle'
+    );
     setAmount('');
     setShowLogForm(false);
     loadDetails();
   } catch (err: any) {
-    showAlert('Error', err.response?.data?.message || err.message);
+    reportActionError(err, pendingContribution, 'payment');
   } finally {
     setSubmitting(false);
   }
@@ -256,21 +293,34 @@ const handleRequestLoan = async () => {
     );
   };
 
-  const handleRepay = async (loanId: number) => {
-    const value = repayAmounts[loanId];
-    if (!value) {
-      showAlert('Missing Info', 'Enter a repayment amount');
-      return;
-    }
-    try {
-      await recordRepayment(loanId, parseFloat(value));
-      showAlert('Success', 'Repayment recorded');
-      setRepayAmounts({ ...repayAmounts, [loanId]: '' });
-      loadDetails();
-    } catch (err: any) {
-      showAlert('Error', err.response?.data?.message || err.message);
-    }
-  };
+ const handleRepay = async (loanId: number) => {
+  const value = parseFloat(repayAmounts[loanId] || '');
+  if (!value || value <= 0) {
+    showAlert('Missing Info', 'Enter a repayment amount');
+    return;
+  }
+  if (repayingId !== null) return;
+  setRepayingId(loanId);
+  const key = keyFor(pendingRepay, `repay:${loanId}:${value}`);
+  try {
+    const result = await recordRepayment(loanId, value, key);
+    pendingRepay.current = null;
+    showAlert(
+      result.duplicate ? 'Already recorded' : 'Success',
+      result.duplicate
+        ? 'This repayment was already recorded earlier, so it was not added again.'
+        : result.loanRepaid
+          ? 'Loan fully repaid. Well done!'
+          : `Repayment recorded. KES ${result.remaining} left to repay.`
+    );
+    setRepayAmounts({ ...repayAmounts, [loanId]: '' });
+    loadDetails();
+  } catch (err: any) {
+    reportActionError(err, pendingRepay, 'repayment');
+  } finally {
+    setRepayingId(null);
+  }
+};
 
   const handleSetupRotation = () => {
     showConfirm(
@@ -295,19 +345,27 @@ const handleRequestLoan = async () => {
   };
 
   const handleMarkPayout = () => {
-    showConfirm('Mark Payout', 'Mark the next member in rotation as paid out?', async () => {
-      setMarkingPayout(true);
-      try {
-        const result = await markPayout(id as string);
-        showAlert('Success', `Payout of KES ${result.amount} recorded`);
-        loadDetails();
-      } catch (err: any) {
-        showAlert('Error', err.response?.data?.message || err.message);
-      } finally {
-        setMarkingPayout(false);
-      }
-    });
-  };
+  showConfirm('Mark Payout', 'Mark the next member in rotation as paid out?', async () => {
+    if (markingPayout) return;
+    setMarkingPayout(true);
+    const key = keyFor(pendingPayout, `payout:${id}`);
+    try {
+      const result = await markPayout(id as string, key);
+      pendingPayout.current = null;
+      showAlert(
+        result.duplicate ? 'Already recorded' : 'Success',
+        result.duplicate
+          ? 'This payout was already recorded earlier, so it was not recorded again.'
+          : `Payout of KES ${result.amount} recorded`
+      );
+      loadDetails();
+    } catch (err: any) {
+      reportActionError(err, pendingPayout, 'payout');
+    } finally {
+      setMarkingPayout(false);
+    }
+  });
+};
 
   const handleSetTarget = async () => {
     if (!targetAmount) {
@@ -344,26 +402,34 @@ const handleRequestLoan = async () => {
     );
   };
 
-  const handleLogSavings = async () => {
-    if (!savingsAmount) {
-      showAlert('Missing Info', 'Enter an amount to save');
-      return;
-    }
-    setSavingsSubmitting(true);
-    try {
-      await logSavings(id as string, parseFloat(savingsAmount), savingsNote || undefined);
-      showAlert('Success', 'Savings logged successfully');
-      setSavingsAmount('');
-      setSavingsNote('');
-      setShowSavingsForm(false);
-      loadDetails();
-    } catch (err: any) {
-      showAlert('Error', err.response?.data?.message || err.message);
-    } finally {
-      setSavingsSubmitting(false);
-    }
-  };
-
+ const handleLogSavings = async () => {
+  const value = parseFloat(savingsAmount);
+  if (!value || value <= 0) {
+    showAlert('Missing Info', 'Enter an amount to save');
+    return;
+  }
+  if (savingsSubmitting) return;
+  setSavingsSubmitting(true);
+  const key = keyFor(pendingSavings, `savings:${id}:${value}:${savingsNote.trim()}`);
+  try {
+    const result = await logSavings(id as string, value, savingsNote || undefined, key);
+    pendingSavings.current = null;
+    showAlert(
+      result.duplicate ? 'Already recorded' : 'Success',
+      result.duplicate
+        ? 'This deposit was already recorded earlier, so it was not added again.'
+        : 'Savings logged successfully'
+    );
+    setSavingsAmount('');
+    setSavingsNote('');
+    setShowSavingsForm(false);
+    loadDetails();
+  } catch (err: any) {
+    reportActionError(err, pendingSavings, 'deposit');
+  } finally {
+    setSavingsSubmitting(false);
+  }
+};
   const handleSelectRole = async (newRole: string) => {
     if (!roleModalMember) return;
     try {
@@ -510,9 +576,20 @@ const owingMembers = canApprove
         return { id: m.id as number, name: m.full_name as string, paid, remaining: Math.max(cycleTarget - paid, 0) };
       })
       .filter(Boolean) as { id: number; name: string; paid: number; remaining: number }[])
+      .sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name))
   : [];
 
 const pendingReminders = owingMembers.filter((m) => !remindedIds.includes(m.id));
+
+const cycleProgress = getCycleProgress(group.current_cycle);
+const daysLeftText = cycleProgress
+  ? cycleProgress.daysLeft === 0
+    ? 'last day'
+    : `${cycleProgress.daysLeft} day${cycleProgress.daysLeft === 1 ? '' : 's'} left`
+  : null;
+const cycleProgressText = cycleProgress
+  ? `Day ${cycleProgress.day} of ${cycleProgress.totalDays} · ${daysLeftText}`
+  : null;
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' },
@@ -643,7 +720,7 @@ const pendingReminders = owingMembers.filter((m) => !remindedIds.includes(m.id))
               <View>
                <View style={styles.sectionHeaderRow}>
   <Text style={[styles.sectionHeader, { color: colors.text }]}>Contributions</Text>
-  <TouchableOpacity onPress={() => setShowLogForm(!showLogForm)}>
+  <TouchableOpacity onPress={() => { if (!submitting) setShowLogForm(!showLogForm); }}>
     <Text style={[styles.logToggle, { color: colors.primary }]}>
       {showLogForm ? 'Cancel' : '+ Log Contribution'}
     </Text>
@@ -687,9 +764,10 @@ const pendingReminders = owingMembers.filter((m) => !remindedIds.includes(m.id))
     </View>
     <View style={{ flex: 1 }}>
       <Text style={[styles.contribName, { color: colors.text }]}>Yet to pay this cycle</Text>
-      <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
-        KES {owingMembers.reduce((sum, m) => sum + m.remaining, 0).toLocaleString()} outstanding
-      </Text>
+    <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+  KES {owingMembers.reduce((sum, m) => sum + m.remaining, 0).toLocaleString()} outstanding
+  {daysLeftText ? ` · ${daysLeftText}` : ''}
+</Text>
     </View>
     <View style={[styles.owingBadge, { backgroundColor: colors.danger }]}>
       <Text style={styles.owingBadgeText}>{owingMembers.length}</Text>
@@ -824,9 +902,15 @@ const pendingReminders = owingMembers.filter((m) => !remindedIds.includes(m.id))
                             onChangeText={(v) => setRepayAmounts({ ...repayAmounts, [loan.id]: v })}
                             placeholderTextColor={colors.placeholder}
                           />
-                          <TouchableOpacity style={[styles.submitButtonSmall, { backgroundColor: colors.primary }]} onPress={() => handleRepay(loan.id)}>
-                            <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>Pay</Text>
-                          </TouchableOpacity>
+                         <TouchableOpacity
+  style={[styles.submitButtonSmall, { backgroundColor: colors.primary }]}
+  disabled={repayingId !== null}
+  onPress={() => handleRepay(loan.id)}
+>
+  <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>
+    {repayingId === loan.id ? '...' : 'Pay'}
+  </Text>
+</TouchableOpacity>
                         </View>
                       )}
                     </View>
@@ -1302,11 +1386,24 @@ const pendingReminders = owingMembers.filter((m) => !remindedIds.includes(m.id))
 
       <View style={styles.sheetHeader}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.sheetTitle, { color: colors.text }]}>Yet to pay</Text>
-          <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
-            {formatCycleLabel(group.current_cycle)}
-          </Text>
-        </View>
+  <Text style={[styles.sheetTitle, { color: colors.text }]}>Yet to pay</Text>
+  <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+    {formatCycleLabel(group.current_cycle)}
+  </Text>
+  {!!cycleProgressText && (
+    <Text
+      style={[
+        styles.contribCycle,
+        {
+          color: cycleProgress && cycleProgress.daysLeft <= 2 ? colors.danger : colors.textMuted,
+          fontWeight: '600'
+        }
+      ]}
+    >
+      {cycleProgressText}
+    </Text>
+  )}
+</View>
         <TouchableOpacity onPress={() => setShowOwingModal(false)} hitSlop={10}>
           <Ionicons name="close" size={24} color={colors.textMuted} />
         </TouchableOpacity>

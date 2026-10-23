@@ -12,9 +12,9 @@ export const decideLoan = async (loanId, decision) => {
   return response.data;
 };
 
-export const recordRepayment = async (loanId, amount_paid) => {
+export const recordRepayment = async (loanId, amount_paid, idempontency_key) => {
   const api = await authAxios();
-  const response = await api.post(`/loans/${loanId}/repay`, { amount_paid });
+  const response = await api.post(`/loans/${loanId}/repay`, { amount_paid, idempontency_key }, {timeout: 15000});
   return response.data;
 };
 
