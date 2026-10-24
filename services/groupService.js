@@ -97,3 +97,14 @@ export const updateGroup = async (groupId, name, description, contribution_amoun
   const response = await api.patch(`/groups/${groupId}/update`, { name, description, contribution_amount, contribution_frequency });
   return response.data;
 };
+
+export const updateLoanInterest = async (groupId, rate, period, graceDays, capPercent) => {
+  const api = await authAxios();
+  const response = await api.put(`/groups/${groupId}/loan-interest`, {
+    rate,
+    period,
+    grace_days: graceDays,
+    cap_percent: capPercent
+  });
+  return response.data;
+};

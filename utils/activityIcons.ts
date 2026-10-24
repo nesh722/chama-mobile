@@ -16,4 +16,5 @@ export const ACTIVITY_ICONS: Record<string, string> = {
   savings_target_updated: 'flag',
   savings_target_removed: 'flag-outline',
   sent_reminder: 'notifications-outline',
+  loan_interest_updated: 'pricetag-outline',
 };

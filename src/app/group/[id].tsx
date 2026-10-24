@@ -28,6 +28,7 @@ import {
   removeSavingsTarget,
   setSavingsTarget,
   updateGroup,
+  updateLoanInterest,
 } from '../../../services/groupService';
 import { decideLoan, getGroupLoans, recordRepayment, requestLoan } from '../../../services/loanService';
 import { getRotationHistory, getRotationStatus, markPayout, setupRotation } from '../../../services/payoutService';
@@ -36,11 +37,10 @@ import { getUser } from '../../../services/tokenService';
 import { formatCycleLabel, getCycleProgress } from '../../../utils/formatCycleLabel';
 import ReportsTab from '../../components/ReportsTab';
 import { keyFor, isNoAnswer, PendingKey } from '../../../utils/requestKey';
+import { SERVER_BASE_URL } from '../../../config/api';
+import { describeInterest, describeInterestShort, formatMoney } from '../../../utils/describeInterest';
 
 type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'reports';
-
-
-const APP_SCHEME = 'mobile';
 
 
 export default function GroupDetailsScreen() {
@@ -117,6 +117,13 @@ const pendingRepay = useRef<PendingKey>(null);
 const pendingPayout = useRef<PendingKey>(null);
 const [repayingId, setRepayingId] = useState<number | null>(null);
 
+const [showInterestModal, setShowInterestModal] = useState(false);
+const [interestRate, setInterestRate] = useState('');
+const [interestPeriod, setInterestPeriod] = useState<'weekly' | 'monthly'>('monthly');
+const [interestGrace, setInterestGrace] = useState('');
+const [interestCap, setInterestCap] = useState('');
+const [interestSaving, setInterestSaving] = useState(false);
+
   const isOverdue = (loan: any) => {
     if (loan.status !== 'approved' || !loan.due_date) return false;
     const due = new Date(loan.due_date);
@@ -125,6 +132,14 @@ const [repayingId, setRepayingId] = useState<number | null>(null);
     today.setHours(0, 0, 0, 0);
     return due < today;
   };
+
+  const daysOverdue = (loan: any) => {
+  const due = new Date(loan.due_date);
+  const today = new Date();
+  due.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return Math.max(Math.round((today.getTime() - due.getTime()) / 86400000), 1);
+};
 
   const rotationComplete = rotation.length > 0 && rotation.every((r: any) => r.has_received);
 
@@ -254,6 +269,40 @@ const handleRemind = async (memberId?: number) => {
     }
   } finally {
     setRemindingId(null);
+  }
+};
+
+const handleOpenInterestSettings = () => {
+  setInterestRate(String(parseFloat(group.late_interest_rate) || 0));
+  setInterestPeriod(group.late_interest_period === 'weekly' ? 'weekly' : 'monthly');
+  setInterestGrace(String(parseInt(group.late_interest_grace_days, 10) || 0));
+  setInterestCap(String(parseFloat(group.late_interest_cap_percent) || 50));
+  setShowInterestModal(true);
+};
+
+const handleSaveInterest = async () => {
+  const rate = parseFloat(interestRate || '0');
+  const grace = parseInt(interestGrace || '0', 10);
+  const cap = parseFloat(interestCap || '50');
+  if (isNaN(rate) || isNaN(grace) || isNaN(cap)) {
+    showAlert('Check the values', 'Rate, grace days and cap must be numbers.');
+    return;
+  }
+  setInterestSaving(true);
+  try {
+    await updateLoanInterest(id as string, rate, interestPeriod, grace, cap);
+    showAlert(
+      'Saved',
+      rate > 0
+        ? 'Late interest settings saved. They apply to loans requested from now on.'
+        : 'Late interest is now off for new loans.'
+    );
+    setShowInterestModal(false);
+    loadDetails();
+  } catch (err: any) {
+    showAlert('Error', err.response?.data?.message || err.message);
+  } finally {
+    setInterestSaving(false);
   }
 };
 
@@ -528,7 +577,7 @@ const handleUpdateGroup = async () => {
     );
   };
 
-  const inviteLink = inviteToken ? `${APP_SCHEME}://join/${inviteToken}` : '';
+ const inviteLink = inviteToken ? `${SERVER_BASE_URL}/join/${inviteToken}` : '';
 
   const handleCopyLink = async () => {
     await Clipboard.setStringAsync(inviteLink);
@@ -821,6 +870,24 @@ const cycleProgressText = cycleProgress
                   </TouchableOpacity>
                 </View>
 
+               {(parseFloat(group.late_interest_rate) > 0 || canApprove) && (
+  <View style={[styles.infoRow, { backgroundColor: colors.surface }]}>
+    <Ionicons name="pricetag-outline" size={16} color={colors.textMuted} />
+    <Text style={[styles.infoText, { color: colors.textSecondary }]} numberOfLines={2}>
+      {parseFloat(group.late_interest_rate) > 0
+        ? `Late interest ${describeInterestShort(group.late_interest_rate, group.late_interest_period, group.late_interest_grace_days)} · capped at ${parseFloat(group.late_interest_cap_percent) || 50}% of the loan`
+        : 'Late interest is off for this group'}
+    </Text>
+    {canApprove && (
+      <TouchableOpacity onPress={handleOpenInterestSettings} hitSlop={8}>
+        <Text style={[styles.logToggle, { color: colors.primary }]}>
+          {parseFloat(group.late_interest_rate) > 0 ? 'Edit' : 'Set up'}
+        </Text>
+      </TouchableOpacity>
+    )}
+  </View>
+)}
+
                 {showLoanForm && (
                   <View style={[styles.form, { backgroundColor: colors.surface }]}>
                     <TextInput
@@ -857,65 +924,118 @@ const cycleProgressText = cycleProgress
                 )}
 
                 {loans.map((loan: any) => {
-                  const loanStatusColor: Record<string, string> = {
-                    approved: colors.success,
-                    repaid: colors.primary,
-                    requested: colors.warning,
-                    rejected: colors.danger
-                  };
-                  return (
-                    <View key={loan.id} style={[styles.loanCard, { backgroundColor: colors.surfaceAlt }]}>
-                      <View style={styles.loanRow}>
-                        <Text style={[styles.contribName, { color: colors.text }]}>{loan.full_name}</Text>
-                        <Text style={[styles.contribStatus, { color: loanStatusColor[loan.status] || colors.danger }]}>
-                          {loan.status}
-                        </Text>
-                      </View>
-                      <Text style={[styles.contribAmount, { color: colors.text }]}>
-                        KES {loan.amount}
-                        {loan.status === 'approved' && ` (Repaid: KES ${loan.totalRepaid} of ${loan.amount})`}
-                      </Text>
-                      {loan.due_date && (
-                        <Text style={[styles.contribCycle, { color: isOverdue(loan) ? colors.danger : colors.textMuted }]}>
-                          {isOverdue(loan) ? 'OVERDUE — ' : ''}Due {new Date(loan.due_date).toLocaleDateString()}
-                        </Text>
-                      )}
+  const overdue = isOverdue(loan);
+  const statusLabel = overdue ? 'overdue' : loan.status;
+  const statusColors: Record<string, string> = {
+    approved: colors.success,
+    repaid: colors.primary,
+    requested: colors.warning,
+    rejected: colors.danger,
+    overdue: colors.danger
+  };
+  const tone = statusColors[statusLabel] || colors.textMuted;
 
-                      {loan.status === 'requested' && canApprove && loan.user_id !== myUserId && (
-                        <View style={styles.loanActions}>
-                          <TouchableOpacity style={[styles.approveButton, { backgroundColor: colors.success }]} onPress={() => handleDecide(loan.id, 'approved')}>
-                            <Text style={[styles.actionButtonText, { color: colors.primaryText }]}>Approve</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={[styles.rejectButton, { backgroundColor: colors.danger }]} onPress={() => handleDecide(loan.id, 'rejected')}>
-                            <Text style={[styles.actionButtonText, { color: colors.primaryText }]}>Reject</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
+  const hasInterest = parseFloat(loan.interestCharged) > 0;
+  const interestUnpaid = parseFloat(loan.interestOutstanding) > 0;
+  const owedTotal = parseFloat(loan.amount) + parseFloat(loan.interestCharged);
+  const progress = owedTotal > 0 ? Math.min(parseFloat(loan.totalRepaid) / owedTotal, 1) : 0;
 
-                      {loan.status === 'approved' && (
-                        <View style={styles.repayRow}>
-                          <TextInput
-                            style={[styles.repayInput, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
-                            placeholder="Repay amount"
-                            keyboardType="numeric"
-                            value={repayAmounts[loan.id] || ''}
-                            onChangeText={(v) => setRepayAmounts({ ...repayAmounts, [loan.id]: v })}
-                            placeholderTextColor={colors.placeholder}
-                          />
-                         <TouchableOpacity
-  style={[styles.submitButtonSmall, { backgroundColor: colors.primary }]}
-  disabled={repayingId !== null}
-  onPress={() => handleRepay(loan.id)}
->
-  <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>
-    {repayingId === loan.id ? '...' : 'Pay'}
-  </Text>
-</TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
+  return (
+    <View key={loan.id} style={[styles.loanCard, { backgroundColor: colors.surfaceAlt }]}>
+      <View style={styles.loanRow}>
+        <Text style={[styles.contribName, { color: colors.text }]}>{loan.full_name}</Text>
+        <View style={[styles.statusPill, { backgroundColor: tone + '1f' }]}>
+          <Text style={[styles.statusPillText, { color: tone }]}>{statusLabel}</Text>
+        </View>
+      </View>
+
+      <Text style={[styles.loanPrincipal, { color: colors.text }]}>{formatMoney(loan.amount)}</Text>
+
+      {!!loan.due_date && (
+        <Text style={[styles.contribCycle, { color: overdue ? colors.danger : colors.textMuted }]}>
+          {overdue
+            ? `Overdue by ${daysOverdue(loan)} day${daysOverdue(loan) === 1 ? '' : 's'} · due ${new Date(loan.due_date).toLocaleDateString()}`
+            : `Due ${new Date(loan.due_date).toLocaleDateString()}`}
+        </Text>
+      )}
+
+      {loan.status === 'approved' && (
+        <View style={[styles.breakdown, { borderTopColor: colors.border }]}>
+          <View style={styles.breakdownRow}>
+            <Text style={[styles.breakdownLabel, { color: colors.textMuted }]}>Principal left</Text>
+            <Text style={[styles.breakdownValue, { color: colors.text }]}>{formatMoney(loan.principalOutstanding)}</Text>
+          </View>
+
+          {hasInterest && (
+            <View style={styles.breakdownRow}>
+              <Text style={[styles.breakdownLabel, { color: colors.textMuted }]}>Late interest</Text>
+              <Text style={[styles.breakdownValue, { color: interestUnpaid ? colors.danger : colors.success }]}>
+                {interestUnpaid
+                  ? `${formatMoney(loan.interestOutstanding)} unpaid`
+                  : `${formatMoney(loan.interestCharged)} paid`}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.breakdownRow}>
+            <Text style={[styles.totalLabel, { color: colors.text }]}>Total outstanding</Text>
+            <Text style={[styles.totalValue, { color: colors.text }]}>{formatMoney(loan.totalOutstanding)}</Text>
+          </View>
+
+          {parseFloat(loan.totalRepaid) > 0 && (
+            <>
+              <View style={[styles.progressTrack, { backgroundColor: colors.border, marginTop: 8 }]}>
+                <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: colors.success }]} />
+              </View>
+              <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+                {formatMoney(loan.totalRepaid)} repaid so far
+              </Text>
+            </>
+          )}
+
+          {parseFloat(loan.interest_rate) > 0 && (
+            <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+              Terms: {describeInterestShort(loan.interest_rate, loan.interest_period, loan.interest_grace_days)}
+            </Text>
+          )}
+        </View>
+      )}
+
+      {loan.status === 'requested' && canApprove && loan.user_id !== myUserId && (
+        <View style={styles.loanActions}>
+          <TouchableOpacity style={[styles.approveButton, { backgroundColor: colors.success }]} onPress={() => handleDecide(loan.id, 'approved')}>
+            <Text style={[styles.actionButtonText, { color: colors.primaryText }]}>Approve</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.rejectButton, { backgroundColor: colors.danger }]} onPress={() => handleDecide(loan.id, 'rejected')}>
+            <Text style={[styles.actionButtonText, { color: colors.primaryText }]}>Reject</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {loan.status === 'approved' && (
+        <View style={styles.repayRow}>
+          <TextInput
+            style={[styles.repayInput, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
+            placeholder="Repay amount"
+            keyboardType="numeric"
+            value={repayAmounts[loan.id] || ''}
+            onChangeText={(v) => setRepayAmounts({ ...repayAmounts, [loan.id]: v })}
+            placeholderTextColor={colors.placeholder}
+          />
+          <TouchableOpacity
+            style={[styles.submitButtonSmall, { backgroundColor: colors.primary }]}
+            disabled={repayingId !== null}
+            onPress={() => handleRepay(loan.id)}
+          >
+            <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>
+              {repayingId === loan.id ? '...' : 'Pay'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+})}
                 {loans.length === 0 && <Text style={[styles.empty, { color: colors.textMuted }]}>No loans yet.</Text>}
               </View>
             )}
@@ -1148,7 +1268,7 @@ const cycleProgressText = cycleProgress
               </View>
             )}
                         {activeTab === 'reports' && (
-              <ReportsTab groupId={id as string} />
+              <ReportsTab groupId={id as string} groupName={group.name} />
             )}
           </View>
       </KeyboardAwareScrollView>
@@ -1474,6 +1594,89 @@ const cycleProgressText = cycleProgress
     </View>
   </View>
 </Modal>
+<Modal visible={showInterestModal} transparent animationType="fade" onRequestClose={() => setShowInterestModal(false)}>
+  <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ width: '100%', alignItems: 'center' }}
+      >
+        <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Late loan interest</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+              Applies to loans requested from now on. Set the rate to 0 to turn it off.
+            </Text>
+
+            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 6 }]}>Rate (% per period)</Text>
+            <TextInput
+              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
+              value={interestRate}
+              onChangeText={setInterestRate}
+              keyboardType="decimal-pad"
+              placeholder="e.g. 2"
+              placeholderTextColor={colors.placeholder}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+              {(['weekly', 'monthly'] as const).map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={[
+                    { flex: 1, borderWidth: 1, padding: 10, borderRadius: 8, alignItems: 'center', borderColor: colors.border },
+                    interestPeriod === p && { backgroundColor: colors.primary, borderColor: colors.primary }
+                  ]}
+                  onPress={() => setInterestPeriod(p)}
+                >
+                  <Text style={{ color: interestPeriod === p ? colors.primaryText : colors.text, fontWeight: '600' }}>
+                    {p === 'weekly' ? 'Per week' : 'Per month'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 6 }]}>Grace days after the due date</Text>
+            <TextInput
+              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
+              value={interestGrace}
+              onChangeText={setInterestGrace}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={colors.placeholder}
+            />
+
+            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 6 }]}>Cap (% of the loan)</Text>
+            <TextInput
+              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
+              value={interestCap}
+              onChangeText={setInterestCap}
+              keyboardType="decimal-pad"
+              placeholder="50"
+              placeholderTextColor={colors.placeholder}
+            />
+
+            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 12 }]}>
+              {describeInterest(interestRate, interestPeriod, interestGrace, interestCap)}
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.submitButton, { backgroundColor: colors.primary }]}
+              onPress={handleSaveInterest}
+              disabled={interestSaving}
+            >
+              <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>
+                {interestSaving ? 'Saving...' : 'Save'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowInterestModal(false)}>
+              <Text style={[styles.modalCancelText, { color: colors.textMuted }]}>Cancel</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
+  </TouchableWithoutFeedback>
+</Modal>
     </View>
     </>
   );
@@ -1550,5 +1753,18 @@ avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justify
 avatarText: { fontWeight: '700', fontSize: 14 },
 remindPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, borderWidth: 1 },
 remindPillText: { fontSize: 13, fontWeight: '600' },
-remindAllButton: { padding: 14, borderRadius: 12, alignItems: 'center', marginTop: 14 }
+remindAllButton: { padding: 14, borderRadius: 12, alignItems: 'center', marginTop: 14 },
+infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 10, marginBottom: 10 },
+infoText: { flex: 1, fontSize: 12 },
+statusPill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 },
+statusPillText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+loanPrincipal: { fontSize: 22, fontWeight: '700', marginTop: 6 },
+breakdown: { marginTop: 10, paddingTop: 10, borderTopWidth: 1 },
+breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+breakdownLabel: { fontSize: 13 },
+breakdownValue: { fontSize: 13, fontWeight: '600' },
+totalLabel: { fontSize: 14, fontWeight: '700' },
+totalValue: { fontSize: 16, fontWeight: '700' },
+progressTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
+progressFill: { height: 6, borderRadius: 3 }
 });

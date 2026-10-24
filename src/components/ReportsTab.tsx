@@ -13,8 +13,20 @@ const REPORT_TYPES = [
   { key: 'payouts', label: 'Payouts' },
   { key: 'savings_target', label: 'Savings Target' },
 ];
+function exportFileName(groupName: string, type: string, format: string) {
+  const slug =
+    groupName
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'chama';
+  const d = new Date();
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `${slug}_${type.replace(/_/g, '-')}_${date}.${format}`;
+}
 
-export default function ReportsTab({ groupId }: { groupId: string }) {
+export default function ReportsTab({ groupId, groupName }: { groupId: string; groupName: string }) {
   const { colors } = useAppTheme();
   const [selectedType, setSelectedType] = useState('summary');
   const [report, setReport] = useState<any>(null);
@@ -34,18 +46,18 @@ export default function ReportsTab({ groupId }: { groupId: string }) {
     }
   }, [groupId]);
 
-  const handleSelectType = (type: string) => {
+const handleSelectType = (type: string) => {
     setSelectedType(type);
     loadReport(type);
   };
 
-  const handleExport = async (format: 'csv' | 'pdf') => {
+const handleExport = async (format: 'csv' | 'pdf') => {
     setExporting(true);
     try {
       const { url, headers } = await getExportDownloadConfig(groupId, selectedType, format);
-const fileUri = `${FileSystem.cacheDirectory}${selectedType}-report.${format}`;
+      const fileUri = `${FileSystem.cacheDirectory}${exportFileName(groupName, selectedType, format)}`;
 
-const result = await FileSystem.downloadAsync(url, fileUri, { headers: { ...headers } });
+      const result = await FileSystem.downloadAsync(url, fileUri, { headers: { ...headers } });
 
 
       if (result.status !== 200) {
