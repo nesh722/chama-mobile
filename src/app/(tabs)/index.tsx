@@ -13,6 +13,7 @@ import { getMySavings } from '../../../services/savingsService';
 import { useAppTheme } from '../../../context/ThemeContext';
 import { formatCycleLabel } from '../../../utils/formatCycleLabel';
 import { ACTIVITY_ICONS } from '../../../utils/activityIcons';
+import { formatMoney } from '../../../utils/describeInterest';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -21,6 +22,20 @@ function getGreeting() {
   return 'Good evening';
 }
 
+function loanDueInfo(loan: any) {
+  if (loan.status === 'requested') return { text: 'Awaiting approval', overdue: false };
+  if (!loan.due_date) return { text: 'No due date', overdue: false };
+
+  const due = new Date(loan.due_date);
+  const today = new Date();
+  due.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today.getTime() - due.getTime()) / 86400000);
+
+  if (diff > 0) return { text: `Overdue by ${diff} day${diff === 1 ? '' : 's'}`, overdue: true };
+  if (diff === 0) return { text: 'Due today', overdue: false };
+  return { text: `Due in ${-diff} day${diff === -1 ? '' : 's'} · ${due.toLocaleDateString()}`, overdue: false };
+}
 
 export default function HomeScreen() {
   const { colors, isDark, setMode } = useAppTheme();
@@ -40,6 +55,7 @@ export default function HomeScreen() {
   const [latestNotification, setLatestNotification] = useState<any>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [openLoans, setOpenLoans] = useState<any[]>([]);
 
   const loadDashboard = async () => {
     try {
@@ -72,7 +88,13 @@ export default function HomeScreen() {
       setActiveLoanCount(
         loansData.loans.filter((l: any) => l.status === 'approved' || l.status === 'requested').length
       );
-
+const open = loansData.loans.filter((l: any) => l.status === 'approved' || l.status === 'requested');
+open.sort((a: any, b: any) => {
+  // Approved loans first, then the soonest due date first, so overdue ones come at the top
+  if (a.status !== b.status) return a.status === 'approved' ? -1 : 1;
+  return new Date(a.due_date || 0).getTime() - new Date(b.due_date || 0).getTime();
+});
+setOpenLoans(open);
       // Paid and partial payments both count, since a partial payment is real money in the group
 const counted = contribData.contributions.filter((c: any) => c.status === 'paid' || c.status === 'partial');
 const contributionTotal = counted.reduce((sum: number, c: any) => sum + parseFloat(c.amount), 0);
@@ -133,6 +155,10 @@ const groupedSavings: Record<string, number> = {};
     );
   }
 
+  const totalOwed = openLoans
+  .filter((l: any) => l.status === 'approved')
+  .reduce((sum: number, l: any) => sum + (Number(l.totalOutstanding) || 0), 0);
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -177,6 +203,67 @@ const groupedSavings: Record<string, number> = {};
           </View>
         </View>
 
+        {openLoans.length > 0 && (
+  <View style={styles.section}>
+    <View style={styles.sectionHeaderRow}>
+      <Text style={[styles.sectionHeader, { color: colors.text, marginBottom: 0 }]}>My Loans</Text>
+      {totalOwed > 0 && (
+        <Text style={[styles.seeAll, { color: colors.textSecondary }]}>{formatMoney(totalOwed)} owed</Text>
+      )}
+    </View>
+
+    {openLoans.map((loan: any) => {
+      const info = loanDueInfo(loan);
+      const approved = loan.status === 'approved';
+      const lateInterest = Number(loan.interestOutstanding) || 0;
+      const accent = info.overdue ? colors.danger : colors.primary;
+
+      return (
+        <TouchableOpacity
+          key={loan.id}
+          style={[styles.rowCard, styles.loanRowCard, { backgroundColor: colors.surface }]}
+          onPress={() =>
+            router.push({ pathname: '/group/[id]', params: { id: String(loan.group_id), tab: 'loans' } })
+          }
+        >
+          <View style={[styles.iconWrap, { backgroundColor: accent + '1a' }]}>
+            <Ionicons
+              name={info.overdue ? 'alert-circle' : approved ? 'cash-outline' : 'time-outline'}
+              size={18}
+              color={accent}
+            />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.rowCardTitle, { color: colors.text }]}>{loan.group_name}</Text>
+            <Text
+              style={[
+                styles.rowCardSubtitle,
+                { color: info.overdue ? colors.danger : colors.textSecondary, marginTop: 2 }
+              ]}
+            >
+              {info.text}
+            </Text>
+          </View>
+
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={[styles.rowCardTitle, { color: colors.text }]}>
+              {formatMoney(approved ? loan.totalOutstanding : loan.amount)}
+            </Text>
+            {approved && lateInterest > 0 && (
+              <Text style={[styles.rowCardSubtitle, { color: colors.danger, marginTop: 2 }]}>
+                incl. {formatMoney(lateInterest)} late interest
+              </Text>
+            )}
+          </View>
+
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+      );
+    })}
+  </View>
+)}
+
         {contributionsByGroup.length > 1 && (
           <View style={styles.section}>
             <Text style={[styles.sectionHeader, { color: colors.text }]}>Savings by Group</Text>
@@ -201,7 +288,7 @@ const groupedSavings: Record<string, number> = {};
         {pendingApprovals.length > 0 && (
           <TouchableOpacity
             style={[styles.banner, { backgroundColor: colors.primary }]}
-            onPress={() => router.push(`/group/${pendingApprovals[0].group_id}`)}
+            onPress={() => router.push({ pathname: '/group/[id]', params: { id: String(pendingApprovals[0].group_id), tab: 'loans' } })}
           >
             <Ionicons name="alert-circle" size={20} color={colors.primaryText} />
             <Text style={[styles.bannerText, { color: colors.primaryText }]}>
@@ -209,26 +296,30 @@ const groupedSavings: Record<string, number> = {};
                 ? `${pendingApprovals[0].borrower_name} requested KES ${pendingApprovals[0].amount} in ${pendingApprovals[0].group_name}`
                 : `${pendingApprovals.length} loan requests awaiting your decision`}
             </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primaryText} />
           </TouchableOpacity>
         )}
 
         {dueStatus.length > 0 && (
           <View style={styles.section}>
             <Text style={[styles.sectionHeader, { color: colors.text }]}>Contributions Due</Text>
-            {dueStatus.map((d: any) => (
-              <TouchableOpacity
-                key={d.groupId}
-                style={[styles.rowCard, { backgroundColor: colors.surface }]}
-                onPress={() => router.push(`/group/${d.groupId}`)}
-              >
-                <Text style={[styles.rowCardTitle, { color: colors.text }]}>{d.groupName}</Text>
-               <Text style={[styles.rowCardSubtitle, { color: colors.textSecondary }]}>
-  {d.paidSoFar > 0
-    ? `KES ${d.remaining} remaining for ${formatCycleLabel(d.currentCycle)}`
-    : `KES ${d.amount} due for ${formatCycleLabel(d.currentCycle)}`}
-</Text>
-              </TouchableOpacity>
-            ))}
+           {dueStatus.map((d: any) => (
+  <TouchableOpacity
+    key={d.groupId}
+    style={[styles.rowCard, styles.loanRowCard, { backgroundColor: colors.surface }]}
+    onPress={() => router.push({ pathname: '/group/[id]', params: { id: String(d.groupId), tab: 'contributions' } })}
+  >
+    <View style={{ flex: 1 }}>
+      <Text style={[styles.rowCardTitle, { color: colors.text }]}>{d.groupName}</Text>
+      <Text style={[styles.rowCardSubtitle, { color: colors.textSecondary }]}>
+        {d.paidSoFar > 0
+          ? `KES ${d.remaining} remaining for ${formatCycleLabel(d.currentCycle)}`
+          : `KES ${d.amount} due for ${formatCycleLabel(d.currentCycle)}`}
+      </Text>
+    </View>
+    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+  </TouchableOpacity>
+))}
           </View>
         )}
 
@@ -238,21 +329,24 @@ const groupedSavings: Record<string, number> = {};
             {targetProgress.map((p: any) => {
               const pct = p.targetToDate > 0 ? Math.min((p.paidToDate / p.targetToDate) * 100, 100) : 0;
               return (
-                <TouchableOpacity
-                  key={p.groupId}
-                  style={[styles.rowCard, { backgroundColor: colors.surface }]}
-                  onPress={() => router.push(`/group/${p.groupId}`)}
-                >
-                  <View style={styles.progressHeaderRow}>
-                    <Text style={[styles.rowCardTitle, { color: colors.text }]}>{p.groupName}</Text>
-                    <Text style={[styles.progressStatus, { color: p.onTrack ? colors.success : colors.danger }]}>
-                      {p.onTrack ? 'ON TRACK' : `BEHIND KES ${p.shortfall}`}
-                    </Text>
-                  </View>
-                  <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-                    <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: colors.primary }]} />
-                  </View>
-                </TouchableOpacity>
+               <TouchableOpacity
+  key={p.groupId}
+  style={[styles.rowCard, styles.loanRowCard, { backgroundColor: colors.surface }]}
+  onPress={() => router.push({ pathname: '/group/[id]', params: { id: String(p.groupId), tab: 'target' } })}
+>
+  <View style={{ flex: 1 }}>
+    <View style={styles.progressHeaderRow}>
+      <Text style={[styles.rowCardTitle, { color: colors.text }]}>{p.groupName}</Text>
+      <Text style={[styles.progressStatus, { color: p.onTrack ? colors.success : colors.danger }]}>
+        {p.onTrack ? 'ON TRACK' : `BEHIND KES ${p.shortfall}`}
+      </Text>
+    </View>
+    <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
+      <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: colors.primary }]} />
+    </View>
+  </View>
+  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+</TouchableOpacity>
               );
             })}
           </View>
@@ -288,9 +382,12 @@ const groupedSavings: Record<string, number> = {};
             onPress={() => router.push('/notifications')}
           >
             <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionHeader, { color: colors.text, marginBottom: 0 }]}>Latest Alert</Text>
-              {!latestNotification.is_read && <View style={[styles.dot, { backgroundColor: colors.primary }]} />}
-            </View>
+  <Text style={[styles.sectionHeader, { color: colors.text, marginBottom: 0 }]}>Latest Alert</Text>
+  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+    {!latestNotification.is_read && <View style={[styles.dot, { backgroundColor: colors.primary }]} />}
+    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+  </View>
+</View>
             <Text style={[styles.rowCardTitle, { color: colors.text, marginTop: 6 }]}>{latestNotification.title}</Text>
             <Text style={[styles.rowCardSubtitle, { color: colors.textSecondary }]}>{latestNotification.message}</Text>
           </TouchableOpacity>
@@ -361,5 +458,6 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4 },
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
   actionCard: { width: '47%', borderRadius: 12, padding: 20, alignItems: 'center' },
-  actionText: { fontSize: 14, fontWeight: '600' }
+  actionText: { fontSize: 14, fontWeight: '600' },
+  loanRowCard: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });

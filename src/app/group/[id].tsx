@@ -41,13 +41,15 @@ import { SERVER_BASE_URL } from '../../../config/api';
 import { describeInterest, describeInterestShort, formatMoney } from '../../../utils/describeInterest';
 
 type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'reports';
+const TAB_KEYS: TabKey[] = ['overview', 'contributions', 'loans', 'payouts', 'target', 'reports'];
 
 
 export default function GroupDetailsScreen() {
   const { colors } = useAppTheme();
-  const { id } = useLocalSearchParams();
+  const { id, tab } = useLocalSearchParams();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [activeTab, setActiveTab] = useState<TabKey>(
+  TAB_KEYS.includes(tab as TabKey) ? (tab as TabKey) : 'overview');
 
   const [group, setGroup] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
