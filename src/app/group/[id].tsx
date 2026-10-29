@@ -43,6 +43,22 @@ import { describeInterest, describeInterestShort, formatMoney } from '../../../u
 type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'reports';
 const TAB_KEYS: TabKey[] = ['overview', 'contributions', 'loans', 'payouts', 'target', 'reports'];
 
+const MAX_RATE_BY_PERIOD = { weekly: 5, monthly: 20 } as const;
+const MAX_INTEREST_CAP = 100;
+const MAX_GRACE_DAYS = 30;
+
+// Keeps only digits (and one decimal point), limits the decimals, and ignores
+// a keystroke that would push the value over the maximum
+const limitNumber = (text: string, prev: string, max: number, decimals = 2) => {
+  let t = text.replace(decimals > 0 ? /[^0-9.]/g : /[^0-9]/g, '');
+  const dot = t.indexOf('.');
+  if (dot !== -1) {
+    t = t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, '').slice(0, decimals);
+  }
+  if (t !== '' && t !== '.' && parseFloat(t) > max) return prev;
+  return t;
+};
+
 
 export default function GroupDetailsScreen() {
   const { colors } = useAppTheme();
@@ -125,6 +141,7 @@ const [interestPeriod, setInterestPeriod] = useState<'weekly' | 'monthly'>('mont
 const [interestGrace, setInterestGrace] = useState('');
 const [interestCap, setInterestCap] = useState('');
 const [interestSaving, setInterestSaving] = useState(false);
+const maxInterestRate = MAX_RATE_BY_PERIOD[interestPeriod];
 
   const isOverdue = (loan: any) => {
     if (loan.status !== 'approved' || !loan.due_date) return false;
@@ -289,6 +306,18 @@ const handleSaveInterest = async () => {
   if (isNaN(rate) || isNaN(grace) || isNaN(cap)) {
     showAlert('Check the values', 'Rate, grace days and cap must be numbers.');
     return;
+  }
+  if (rate < 0 || rate > maxInterestRate) {
+  showAlert('Check the rate', `The ${interestPeriod} rate must be between 0 and ${maxInterestRate}%.`);
+  return;
+}
+  if (rate > 0 && (cap <= 0 || cap > MAX_INTEREST_CAP)) {
+  showAlert('Check the cap', `The cap must be between 1 and ${MAX_INTEREST_CAP}% of the loan.`);
+  return;
+  }
+  if (grace < 0 || grace > MAX_GRACE_DAYS) {
+  showAlert('Check the grace days', `Grace days must be between 0 and ${MAX_GRACE_DAYS}.`);
+  return;
   }
   setInterestSaving(true);
   try {
@@ -610,7 +639,10 @@ const handleUpdateGroup = async () => {
     );
   }
 
-  const canApprove = myRole === 'treasurer' || myRole === 'chair';
+const canApprove = myRole === 'treasurer' || myRole === 'chair';
+const approverCount: number = group.approver_count ?? 0;
+const minApprovers: number = group.min_approvers ?? 2;
+const loansPaused = approverCount < minApprovers;
   
 const myCycleRow = contributions.find((c: any) => c.user_id === myUserId && c.cycle_period === group.current_cycle);
 const cycleTarget = parseFloat(group.contribution_amount);
@@ -739,6 +771,11 @@ const cycleProgressText = cycleProgress
                 )}
 
                 <Text style={[styles.sectionHeader, { color: colors.text }]}>Members</Text>
+                {loansPaused && canApprove && (
+  <Text style={[styles.contribCycle, { color: colors.warning, marginBottom: 6 }]}>
+    {approverCount} of {minApprovers} required approvers. Tap a member's role to make them treasurer or chair.
+  </Text>
+)}
                 {members.map((m: any) => (
                   <View key={m.id} style={[styles.memberRow, { borderBottomColor: colors.border }]}>
                     <Text style={[styles.memberName, { color: colors.text }]}>{m.full_name}</Text>
@@ -865,14 +902,37 @@ const cycleProgressText = cycleProgress
               <View>
                 <View style={styles.sectionHeaderRow}>
                   <Text style={[styles.sectionHeader, { color: colors.text }]}>Loans</Text>
-                  <TouchableOpacity onPress={() => setShowLoanForm(!showLoanForm)}>
-                    <Text style={[styles.logToggle, { color: colors.primary }]}>
-                      {showLoanForm ? 'Cancel' : '+ Request Loan'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                  {!loansPaused && (
+  <TouchableOpacity onPress={() => setShowLoanForm(!showLoanForm)}>
+    <Text style={[styles.logToggle, { color: colors.primary }]}>
+      {showLoanForm ? 'Cancel' : '+ Request Loan'}
+    </Text>
+  </TouchableOpacity>
+)}
+</View>
 
-               {(parseFloat(group.late_interest_rate) > 0 || canApprove) && (
+ {loansPaused && (
+      <View style={[styles.noticeCard, { backgroundColor: colors.warning + '1f', borderColor: colors.warning }]}>
+        <Ionicons name="shield-outline" size={20} color={colors.warning} />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.noticeTitle, { color: colors.text }]}>Loans are paused</Text>
+          <Text style={[styles.noticeBody, { color: colors.textSecondary }]}>
+            {canApprove
+              ? `This group has ${approverCount} of ${minApprovers} required approvers. Make another member a treasurer or chair to turn loans on.`
+              : 'Loans are paused until the group has a second treasurer or chair. Ask your group leaders to assign one.'}
+          </Text>
+          {canApprove && (
+            <TouchableOpacity onPress={() => setActiveTab('overview')} hitSlop={8}>
+              <Text style={[styles.logToggle, { color: colors.primary, marginTop: 6 }]}>
+                Go to members
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    )}
+
+{(parseFloat(group.late_interest_rate) > 0 || canApprove) && (
   <View style={[styles.infoRow, { backgroundColor: colors.surface }]}>
     <Ionicons name="pricetag-outline" size={16} color={colors.textMuted} />
     <Text style={[styles.infoText, { color: colors.textSecondary }]} numberOfLines={2}>
@@ -951,7 +1011,7 @@ const cycleProgressText = cycleProgress
         </View>
       </View>
 
-      <Text style={[styles.loanPrincipal, { color: colors.text }]}>{formatMoney(loan.amount)}</Text>
+      <Text style={[styles.contribAmount, { color: colors.text }]}>{formatMoney(loan.amount)}</Text>
 
       {!!loan.due_date && (
         <Text style={[styles.contribCycle, { color: overdue ? colors.danger : colors.textMuted }]}>
@@ -1610,11 +1670,13 @@ const cycleProgressText = cycleProgress
               Applies to loans requested from now on. Set the rate to 0 to turn it off.
             </Text>
 
-            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 6 }]}>Rate (% per period)</Text>
+            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 6 }]}>
+  Rate (% per {interestPeriod === 'weekly' ? 'week' : 'month'}, max {maxInterestRate})
+</Text>
             <TextInput
               style={[styles.input, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
               value={interestRate}
-              onChangeText={setInterestRate}
+               onChangeText={(t) => setInterestRate((prev) => limitNumber(t, prev, maxInterestRate))}
               keyboardType="decimal-pad"
               placeholder="e.g. 2"
               placeholderTextColor={colors.placeholder}
@@ -1628,7 +1690,11 @@ const cycleProgressText = cycleProgress
                     { flex: 1, borderWidth: 1, padding: 10, borderRadius: 8, alignItems: 'center', borderColor: colors.border },
                     interestPeriod === p && { backgroundColor: colors.primary, borderColor: colors.primary }
                   ]}
-                  onPress={() => setInterestPeriod(p)}
+                  onPress={() => {
+  setInterestPeriod(p);
+  const max = MAX_RATE_BY_PERIOD[p];
+  if (parseFloat(interestRate) > max) setInterestRate(String(max));
+}}
                 >
                   <Text style={{ color: interestPeriod === p ? colors.primaryText : colors.text, fontWeight: '600' }}>
                     {p === 'weekly' ? 'Per week' : 'Per month'}
@@ -1637,21 +1703,25 @@ const cycleProgressText = cycleProgress
               ))}
             </View>
 
-            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 6 }]}>Grace days after the due date</Text>
+            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 6 }]}>
+              Grace days after the due date (max {MAX_GRACE_DAYS})
+            </Text>
             <TextInput
               style={[styles.input, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
               value={interestGrace}
-              onChangeText={setInterestGrace}
+              onChangeText={(t) => setInterestGrace((prev) => limitNumber(t, prev, MAX_GRACE_DAYS))}
               keyboardType="number-pad"
               placeholder="0"
               placeholderTextColor={colors.placeholder}
             />
 
-            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 6 }]}>Cap (% of the loan)</Text>
+            <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 6 }]}>
+              Cap (% of the loan, max {MAX_INTEREST_CAP})
+            </Text>
             <TextInput
               style={[styles.input, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
               value={interestCap}
-              onChangeText={setInterestCap}
+              onChangeText={(t) => setInterestCap((prev) => limitNumber(t, prev, MAX_INTEREST_CAP))}
               keyboardType="decimal-pad"
               placeholder="50"
               placeholderTextColor={colors.placeholder}
@@ -1759,14 +1829,16 @@ remindAllButton: { padding: 14, borderRadius: 12, alignItems: 'center', marginTo
 infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 10, marginBottom: 10 },
 infoText: { flex: 1, fontSize: 12 },
 statusPill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 },
-statusPillText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-loanPrincipal: { fontSize: 22, fontWeight: '700', marginTop: 6 },
-breakdown: { marginTop: 10, paddingTop: 10, borderTopWidth: 1 },
+statusPillText: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
+breakdown: { marginTop: 8, paddingTop: 8, borderTopWidth: 1 },
 breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
 breakdownLabel: { fontSize: 13 },
 breakdownValue: { fontSize: 13, fontWeight: '600' },
-totalLabel: { fontSize: 14, fontWeight: '700' },
-totalValue: { fontSize: 16, fontWeight: '700' },
+totalLabel: { fontSize: 15, fontWeight: '600' },
+totalValue: { fontSize: 15, fontWeight: '700' },
 progressTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
-progressFill: { height: 6, borderRadius: 3 }
+progressFill: { height: 6, borderRadius: 3 },
+noticeCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, marginTop: 4, marginBottom: 10 },
+noticeTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
+noticeBody: { fontSize: 13, lineHeight: 18 },
 });
