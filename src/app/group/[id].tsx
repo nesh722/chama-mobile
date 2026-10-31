@@ -36,6 +36,7 @@ import { getGroupSavings, logSavings } from '../../../services/savingsService';
 import { getUser } from '../../../services/tokenService';
 import { formatCycleLabel, getCycleProgress } from '../../../utils/formatCycleLabel';
 import ReportsTab from '../../components/ReportsTab';
+import MpesaPayModal, { MpesaRequest } from '../../components/MpesaPayModal';
 import { keyFor, isNoAnswer, PendingKey } from '../../../utils/requestKey';
 import { SERVER_BASE_URL } from '../../../config/api';
 import { describeInterest, describeInterestShort, formatMoney } from '../../../utils/describeInterest';
@@ -117,6 +118,8 @@ const [showSavingsForm, setShowSavingsForm] = useState(false);
 const [savingsAmount, setSavingsAmount] = useState('');
 const [savingsNote, setSavingsNote] = useState('');
 const [savingsSubmitting, setSavingsSubmitting] = useState(false);
+
+const [mpesaRequest, setMpesaRequest] = useState<MpesaRequest | null>(null);
 
 const [roleModalMember, setRoleModalMember] = useState<{ id: number; name: string; currentRole: string } | null>(null);
 
@@ -510,6 +513,100 @@ const handleRequestLoan = async () => {
     setSavingsSubmitting(false);
   }
 };
+  // ---- M-Pesa ----
+  // STK push only moves whole shillings
+  const wholeShillings = (raw: string) => {
+    const text = raw.trim();
+    const n = Number(text);
+    return text !== '' && Number.isInteger(n) && n >= 1 ? n : null;
+  };
+
+  const showWholeShillingsAlert = () =>
+    showAlert('Whole shillings only', 'M-Pesa payments must be a whole number of shillings, for example 500.');
+
+  const handleMpesaContribution = () => {
+    const n = wholeShillings(amount);
+    if (n === null) {
+      showWholeShillingsAlert();
+      return;
+    }
+    setMpesaRequest({
+      purpose: 'contribution',
+      amount: n,
+      title: 'Pay contribution',
+      detail: cycleRemaining > 0 ? `KES ${cycleRemaining.toLocaleString()} remaining this cycle` : undefined
+    });
+  };
+
+  const handleMpesaSavings = () => {
+    const n = wholeShillings(savingsAmount);
+    if (n === null) {
+      showWholeShillingsAlert();
+      return;
+    }
+    setMpesaRequest({
+      purpose: 'savings',
+      amount: n,
+      title: 'Save with M-Pesa',
+      detail: 'Goes into your Extra Savings',
+      note: savingsNote.trim() || undefined
+    });
+  };
+
+  const handleMpesaRepay = (loan: any) => {
+    const outstanding = parseFloat(loan.totalOutstanding);
+    // The most M-Pesa can take is the balance rounded UP to the next whole shilling
+    const cap = Math.ceil(outstanding - 1e-9);
+    if (!(cap >= 1)) {
+      showAlert('Nothing to pay', 'This loan has nothing left to pay.');
+      return;
+    }
+
+    const typed = (repayAmounts[loan.id] || '').trim();
+    const n = typed === '' ? cap : wholeShillings(typed);
+    if (n === null) {
+      showWholeShillingsAlert();
+      return;
+    }
+    if (n > cap) {
+      showAlert('Too much', `The most you can pay is KES ${cap.toLocaleString()}.`);
+      return;
+    }
+
+    const left = Math.round((outstanding - n) * 100) / 100;
+    setMpesaRequest({
+      purpose: 'loan_repayment',
+      amount: n,
+      loanId: loan.id,
+      title: 'Repay loan',
+      detail:
+        left < 0
+          ? `This clears your loan. The extra KES ${Math.abs(left).toFixed(2)} goes to your Extra Savings.`
+          : left === 0
+            ? 'This clears your loan.'
+            : `KES ${left.toFixed(2)} will still be outstanding.`
+    });
+  };
+
+  const handleMpesaClosed = (paid: boolean) => {
+    const req = mpesaRequest;
+    setMpesaRequest(null);
+    if (paid && req) {
+      if (req.purpose === 'contribution') {
+        setAmount('');
+        setShowLogForm(false);
+      } else if (req.purpose === 'savings') {
+        setSavingsAmount('');
+        setSavingsNote('');
+        setShowSavingsForm(false);
+      } else if (req.loanId !== undefined) {
+        const loanId = req.loanId;
+        setRepayAmounts((prev) => ({ ...prev, [loanId]: '' }));
+      }
+    }
+    loadDetails();
+  };
+
   const handleSelectRole = async (newRole: string) => {
     if (!roleModalMember) return;
     try {
@@ -773,7 +870,7 @@ const cycleProgressText = cycleProgress
                 <Text style={[styles.sectionHeader, { color: colors.text }]}>Members</Text>
                 {loansPaused && canApprove && (
   <Text style={[styles.contribCycle, { color: colors.warning, marginBottom: 6 }]}>
-    {approverCount} of {minApprovers} required approvers. Tap a member's role to make them treasurer or chair.
+    {approverCount} of {minApprovers} required approvers. Tap a member's role to make them treasurer or a second chair.
   </Text>
 )}
                 {members.map((m: any) => (
@@ -837,6 +934,14 @@ const cycleProgressText = cycleProgress
                       <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>
                         {submitting ? 'Saving...' : 'Submit'}
                       </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.mpesaButton, { borderColor: colors.primary }]}
+                      onPress={handleMpesaContribution}
+                      disabled={submitting}
+                    >
+                      <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
+                      <Text style={[styles.submitButtonText, { color: colors.primary }]}>Pay with M-Pesa</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -1093,6 +1198,16 @@ const cycleProgressText = cycleProgress
               {repayingId === loan.id ? '...' : 'Pay'}
             </Text>
           </TouchableOpacity>
+          {loan.user_id === myUserId && (
+            <TouchableOpacity
+              style={[styles.mpesaSmall, { borderColor: colors.primary }]}
+              disabled={repayingId !== null}
+              onPress={() => handleMpesaRepay(loan)}
+            >
+              <Ionicons name="phone-portrait-outline" size={16} color={colors.primary} />
+              <Text style={[styles.submitButtonText, { color: colors.primary }]}>M-Pesa</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>
@@ -1306,6 +1421,14 @@ const cycleProgressText = cycleProgress
                       <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>
                         {savingsSubmitting ? 'Saving...' : 'Submit'}
                       </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.mpesaButton, { borderColor: colors.primary }]}
+                      onPress={handleMpesaSavings}
+                      disabled={savingsSubmitting}
+                    >
+                      <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
+                      <Text style={[styles.submitButtonText, { color: colors.primary }]}>Save with M-Pesa</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -1749,6 +1872,8 @@ const cycleProgressText = cycleProgress
     </View>
   </TouchableWithoutFeedback>
 </Modal>
+
+<MpesaPayModal request={mpesaRequest} groupId={id as string} onClose={handleMpesaClosed} />
     </View>
     </>
   );
@@ -1841,4 +1966,6 @@ progressFill: { height: 6, borderRadius: 3 },
 noticeCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, marginTop: 4, marginBottom: 10 },
 noticeTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
 noticeBody: { fontSize: 13, lineHeight: 18 },
+mpesaButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 12, borderRadius: 8, borderWidth: 1, marginTop: 10 },
+mpesaSmall: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1 },
 });
