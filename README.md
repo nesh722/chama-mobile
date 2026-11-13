@@ -20,7 +20,7 @@ Built as a 4th-year Computer Science final year project.
 - Profile editing: name, phone, email, password, profile picture, account deletion
 
 ### Groups
-- Create a group (creator becomes treasurer)
+- Create a group (creator becomes chair)
 - Join via QR code or shareable invite link (with a public preview before logging in)
 - Role management (chair/treasurer/secretary/member), member removal, group deletion
 

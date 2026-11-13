@@ -155,10 +155,15 @@ export default function MpesaPayModal({ request, groupId, onClose }: Props) {
 
   const renderForm = () => (
     <>
+            <View style={[styles.iconBadge, { backgroundColor: colors.primary + '1f' }]}>
+        <Ionicons name="phone-portrait-outline" size={26} color={colors.primary} />
+      </View>
       <Text style={[styles.title, { color: colors.text }]}>{request.title}</Text>
       <Text style={[styles.amount, { color: colors.text }]}>KES {request.amount.toLocaleString()}</Text>
       {!!request.detail && (
-        <Text style={[styles.detail, { color: colors.textSecondary }]}>{request.detail}</Text>
+        <View style={[styles.pill, { backgroundColor: colors.primary + '1f' }]}>
+          <Text style={[styles.pillText, { color: colors.primary }]}>{request.detail}</Text>
+        </View>
       )}
 
       <Text style={[styles.label, { color: colors.textMuted }]}>M-Pesa number</Text>
@@ -283,6 +288,9 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, marginTop: 18, marginBottom: 6 },
   input: { borderWidth: 1, borderRadius: 8, padding: 10 },
   hint: { fontSize: 12, marginTop: 6, textAlign: 'center', lineHeight: 17 },
+  iconBadge: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 10 },
+  pill: { alignSelf: 'center', borderRadius: 12, paddingVertical: 5, paddingHorizontal: 10, marginTop: 10, maxWidth: '100%' },
+  pillText: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
   error: { fontSize: 13, marginTop: 10, textAlign: 'center' },
   primaryButton: { padding: 13, borderRadius: 8, alignItems: 'center', marginTop: 18 },
   primaryText: { fontWeight: '600' },

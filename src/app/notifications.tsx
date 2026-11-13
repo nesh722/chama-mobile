@@ -1,10 +1,11 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { FlatList, Alert, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getMyNotifications, markAsRead, clearAllNotifications } from '../../services/notificationService';
 import { useAppTheme } from '../../context/ThemeContext';
+import { showConfirm } from '../../services/alertService';
 
 export default function NotificationsScreen() {
   const { colors } = useAppTheme();
@@ -50,7 +51,7 @@ export default function NotificationsScreen() {
   };
 
      const handleClearAll = () => {
-    Alert.alert(
+    showConfirm(
       'Clear all notifications?',
       'This will permanently delete all your notifications. This cannot be undone.',
       [

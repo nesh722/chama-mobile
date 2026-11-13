@@ -17,4 +17,10 @@ export const ACTIVITY_ICONS: Record<string, string> = {
   savings_target_removed: 'flag-outline',
   sent_reminder: 'notifications-outline',
   loan_interest_updated: 'pricetag-outline',
+  payout_requested: 'time-outline',
+  payout_approved: 'checkmark-circle-outline',
+  payout_rejected: 'close-circle-outline',
+  meeting_scheduled: 'calendar-outline',
+  minutes_posted: 'document-text-outline',
+  announcement_posted: 'megaphone-outline',
 };

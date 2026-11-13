@@ -15,7 +15,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import QRCode from 'react-native-qrcode-svg';
 import { useAppTheme } from '../../../context/ThemeContext';
 import { showAlert, showConfirm } from '../../../services/alertService';
-import { getGroupContributions, logContribution, sendContributionReminder } from '../../../services/contributionService';
+import { getGroupContributions, sendContributionReminder } from '../../../services/contributionService';
 import {
   changeRole,
   deleteGroup,
@@ -30,19 +30,34 @@ import {
   updateGroup,
   updateLoanInterest,
 } from '../../../services/groupService';
-import { decideLoan, getGroupLoans, recordRepayment, requestLoan } from '../../../services/loanService';
-import { getRotationHistory, getRotationStatus, markPayout, setupRotation } from '../../../services/payoutService';
+import { decideLoan, getGroupLoans, requestLoan } from '../../../services/loanService';
+import {
+  cancelPayoutApproval,
+  decidePayoutApproval,
+  getPayoutApproval,
+  getRotationHistory,
+  getRotationStatus,
+  markPayout,
+  requestPayoutApproval,
+  setupRotation
+} from '../../../services/payoutService';
 import { getGroupSavings, logSavings } from '../../../services/savingsService';
 import { getUser } from '../../../services/tokenService';
 import { formatCycleLabel, getCycleProgress } from '../../../utils/formatCycleLabel';
 import ReportsTab from '../../components/ReportsTab';
+import MeetingsTab from '../../components/MeetingsTab';
 import MpesaPayModal, { MpesaRequest } from '../../components/MpesaPayModal';
+import CashClaimModal, { Approver, CashRequest } from '../../components/CashClaimModal';
+import CashReviewModal from '../../components/CashReviewModal';
+import { cancelCashClaim, dismissCashClaim, getCashClaims } from '../../../services/cashClaimService';
+import MpesaSendModal, { MpesaSendRequest } from '../../components/MpesaSendModal';
+import { getB2CTransfers, releaseB2C } from '../../../services/mpesaB2CService';
 import { keyFor, isNoAnswer, PendingKey } from '../../../utils/requestKey';
 import { SERVER_BASE_URL } from '../../../config/api';
 import { describeInterest, describeInterestShort, formatMoney } from '../../../utils/describeInterest';
 
-type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'reports';
-const TAB_KEYS: TabKey[] = ['overview', 'contributions', 'loans', 'payouts', 'target', 'reports'];
+type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'reports' | 'meetings';
+const TAB_KEYS: TabKey[] = ['overview', 'contributions', 'loans', 'payouts', 'target', 'reports', 'meetings'];
 
 const MAX_RATE_BY_PERIOD = { weekly: 5, monthly: 20 } as const;
 const MAX_INTEREST_CAP = 100;
@@ -120,6 +135,17 @@ const [savingsNote, setSavingsNote] = useState('');
 const [savingsSubmitting, setSavingsSubmitting] = useState(false);
 
 const [mpesaRequest, setMpesaRequest] = useState<MpesaRequest | null>(null);
+
+// M-Pesa B2C: sending payouts and loans out
+const [b2cTransfers, setB2cTransfers] = useState<any[]>([]);
+const [b2cSandbox, setB2cSandbox] = useState(false);
+const [b2cReady, setB2cReady] = useState(false);
+const [payoutApprovalInfo, setPayoutApprovalInfo] = useState<any>(null); // null = the server has no payout approvals yet
+const [payoutApprovalBusy, setPayoutApprovalBusy] = useState(false);
+const [cashClaims, setCashClaims] = useState<any[]>([]); // cash payments waiting for / decided by a treasurer or chair
+const [cashRequest, setCashRequest] = useState<CashRequest | null>(null);
+const [reviewClaim, setReviewClaim] = useState<any>(null);
+const [sendRequest, setSendRequest] = useState<MpesaSendRequest | null>(null);
 
 const [roleModalMember, setRoleModalMember] = useState<{ id: number; name: string; currentRole: string } | null>(null);
 
@@ -200,6 +226,28 @@ const maxInterestRate = MAX_RATE_BY_PERIOD[interestPeriod];
   const historyData = await getSavingsTargetHistory(id as string);
       setTargetHistory(historyData.history);
 
+      try {
+        const b2cData = await getB2CTransfers(id as string);
+        setB2cTransfers(b2cData.transfers || []);
+        setB2cSandbox(!!b2cData.sandbox);
+        setB2cReady(true);
+      } catch {
+        setB2cReady(false); // sending money by M-Pesa is not set up on the server yet
+      }
+
+      try {
+        setPayoutApprovalInfo(await getPayoutApproval(id as string));
+      } catch {
+        setPayoutApprovalInfo(null); // payout approvals are not set up on the server yet
+      }
+
+      try {
+        const claimData = await getCashClaims(id as string);
+        setCashClaims(claimData.claims || []);
+      } catch {
+        setCashClaims([]); // cash confirmation is not set up on the server yet
+      }
+
   const user = await getUser();
       if (user) {
         setMyUserId(user.id);
@@ -236,34 +284,19 @@ const maxInterestRate = MAX_RATE_BY_PERIOD[interestPeriod];
   }
 };
 
-const handleLogContribution = async () => {
+// Cash is never recorded on the payer's word alone: they ask the treasurer / chair who got it to confirm.
+const handleCashContribution = () => {
   const value = parseFloat(amount);
   if (!value || value <= 0) {
     showAlert('Missing Info', 'Enter an amount');
     return;
   }
-  if (submitting) return;
-  setSubmitting(true);
-  const key = keyFor(pendingContribution, `contribution:${id}:${value}`);
-  try {
-    const result = await logContribution(id as string, value, key);
-    pendingContribution.current = null;
-    showAlert(
-      result.duplicate ? 'Already recorded' : 'Success',
-      result.duplicate
-        ? 'This payment was already recorded earlier, so it was not added again.'
-        : result.remaining > 0
-          ? `Logged KES ${value}. KES ${result.remaining} is still remaining for this cycle.`
-          : 'Contribution complete for this cycle'
-    );
-    setAmount('');
-    setShowLogForm(false);
-    loadDetails();
-  } catch (err: any) {
-    reportActionError(err, pendingContribution, 'payment');
-  } finally {
-    setSubmitting(false);
-  }
+  setCashRequest({
+    kind: 'contribution',
+    amount: value,
+    title: 'Cash contribution',
+    detail: cycleRemaining > 0 ? `KES ${cycleRemaining.toLocaleString()} remaining this cycle` : undefined
+  });
 };
 
 const handleRemind = async (memberId?: number) => {
@@ -376,33 +409,75 @@ const handleRequestLoan = async () => {
     );
   };
 
- const handleRepay = async (loanId: number) => {
-  const value = parseFloat(repayAmounts[loanId] || '');
-  if (!value || value <= 0) {
+const handleCashRepay = (loan: any) => {
+  const outstanding = parseFloat(loan.totalOutstanding);
+  if (!(outstanding > 0)) {
+    showAlert('Nothing to pay', 'This loan has nothing left to pay.');
+    return;
+  }
+  const typed = (repayAmounts[loan.id] || '').trim();
+  const n = typed === '' ? outstanding : parseFloat(typed);
+  if (!n || n <= 0) {
     showAlert('Missing Info', 'Enter a repayment amount');
     return;
   }
-  if (repayingId !== null) return;
-  setRepayingId(loanId);
-  const key = keyFor(pendingRepay, `repay:${loanId}:${value}`);
-  try {
-    const result = await recordRepayment(loanId, value, key);
-    pendingRepay.current = null;
-    showAlert(
-      result.duplicate ? 'Already recorded' : 'Success',
-      result.duplicate
-        ? 'This repayment was already recorded earlier, so it was not added again.'
-        : result.loanRepaid
-          ? 'Loan fully repaid. Well done!'
-          : `Repayment recorded. KES ${result.remaining} left to repay.`
-    );
-    setRepayAmounts({ ...repayAmounts, [loanId]: '' });
-    loadDetails();
-  } catch (err: any) {
-    reportActionError(err, pendingRepay, 'repayment');
-  } finally {
-    setRepayingId(null);
+  if (n > outstanding + 1e-9) {
+    showAlert('Too much', `The most you can pay is KES ${outstanding.toLocaleString()}.`);
+    return;
   }
+  setCashRequest({
+    kind: 'loan_repayment',
+    amount: Math.round(n * 100) / 100,
+    loanId: loan.id,
+    maxAmount: outstanding,
+    title: 'Cash loan repayment',
+    detail: `KES ${outstanding.toFixed(2)} outstanding`
+  });
+};
+
+const handleCashClosed = (sent: boolean, receiverName?: string) => {
+  const req = cashRequest;
+  setCashRequest(null);
+  if (sent && req) {
+    if (req.kind === 'contribution') {
+      setAmount('');
+      setShowLogForm(false);
+    } else if (req.loanId !== undefined) {
+      const loanId = req.loanId;
+      setRepayAmounts((prev) => ({ ...prev, [loanId]: '' }));
+    }
+    showAlert(
+      'Sent for confirmation',
+      `${receiverName || 'The treasurer'} has been asked to confirm they received your cash. It will be recorded as soon as they do.`
+    );
+  }
+  loadDetails();
+};
+
+const handleCancelClaim = (claim: any) => {
+  showConfirm('Cancel Cash Payment', 'Cancel this cash payment? Nothing has been recorded yet.', async () => {
+    try {
+      await cancelCashClaim(claim.id);
+    } catch (err: any) {
+      showAlert('Error', err.response?.data?.message || err.message);
+    }
+    loadDetails();
+  });
+};
+
+// The X on a confirmed / rejected answer: hide it right away, and remember it on the server
+const handleDismissClaim = async (claim: any) => {
+  setCashClaims((prev) => prev.map((c: any) => (c.id === claim.id ? { ...c, dismissed: true } : c)));
+  try {
+    await dismissCashClaim(claim.id);
+  } catch {
+    loadDetails(); // it could not be saved, so show what the server has
+  }
+};
+
+const handleReviewClosed = (changed: boolean) => {
+  setReviewClaim(null);
+  if (changed) loadDetails();
 };
 
   const handleSetupRotation = () => {
@@ -424,6 +499,55 @@ const handleRequestLoan = async () => {
           setSettingUpRotation(false);
         }
       }
+    );
+  };
+
+  // ----- second approver for payouts -----
+  const runApprovalAction = async (action: () => Promise<any>, doneTitle: string, doneMessage: string) => {
+    if (payoutApprovalBusy) return;
+    setPayoutApprovalBusy(true);
+    try {
+      await action();
+      showAlert(doneTitle, doneMessage);
+    } catch (err: any) {
+      showAlert('Error', err.response?.data?.message || err.message);
+    } finally {
+      setPayoutApprovalBusy(false);
+      loadDetails();
+    }
+  };
+
+  const handleRequestPayoutApproval = () =>
+    runApprovalAction(
+      () => requestPayoutApproval(id as string),
+      'Requested',
+      'Another treasurer or chair has been asked to approve this payout.'
+    );
+
+  const handleDecidePayout = (decision: 'approved' | 'rejected') => {
+    const info = payoutApprovalInfo;
+    if (!info?.approval || !info?.turn) return;
+    const what = `KES ${Number(info.approval.amount).toLocaleString()} to ${info.turn.recipientName}`;
+    showConfirm(
+      decision === 'approved' ? 'Approve Payout' : 'Reject Payout',
+      decision === 'approved' ? `Approve paying ${what}?` : `Reject paying ${what}?`,
+      () => runApprovalAction(
+        () => decidePayoutApproval(info.approval.id, decision),
+        decision === 'approved' ? 'Approved' : 'Rejected',
+        decision === 'approved' ? 'The payout can now be paid out.' : 'The payout was rejected.'
+      )
+    );
+  };
+
+  const handleCancelPayoutApproval = () => {
+    const info = payoutApprovalInfo;
+    if (!info?.approval) return;
+    showConfirm(
+      'Cancel Approval',
+      info.approval.status === 'approved'
+        ? 'Take back this approval? The payout will need to be requested and approved again.'
+        : 'Withdraw this payout request?',
+      () => runApprovalAction(() => cancelPayoutApproval(info.approval.id), 'Cancelled', 'The payout request was cancelled.')
     );
   };
 
@@ -607,6 +731,254 @@ const handleRequestLoan = async () => {
     loadDetails();
   };
 
+  // ---- M-Pesa B2C (sending money out) ----
+  const b2cFor = (purpose: 'payout' | 'loan_disbursement', refId: number) =>
+    b2cTransfers.find((t: any) => t.purpose === purpose && Number(t.referenceId) === Number(refId)) || null;
+
+  const handleSendNextPayout = () => {
+    const turn = rotation.find((r: any) => !r.has_received);
+    if (!turn) return;
+    const total = parseFloat(group.contribution_amount) * members.length;
+    if (!Number.isInteger(total) || total < 1) {
+      showAlert(
+        'Whole shillings only',
+        `This payout is KES ${total}. M-Pesa can only send whole shillings, so record it with Mark Next Payout instead.`
+      );
+      return;
+    }
+    setSendRequest({ purpose: 'payout', amount: total, recipientName: turn.full_name });
+  };
+
+  const handleSendLoan = (loan: any) => {
+    const n = parseFloat(loan.amount);
+    if (!Number.isInteger(n) || n < 1) {
+      showAlert('Whole shillings only', `This loan is KES ${n}. M-Pesa can only send whole shillings, so hand it over another way.`);
+      return;
+    }
+    setSendRequest({
+      purpose: 'loan_disbursement',
+      amount: n,
+      recipientName: loan.full_name,
+      loanId: loan.id,
+      warning: b2cSandbox
+        ? "Only send this if the loan hasn't already been handed over. Sandbox mode: no real money moves."
+        : "Only send this if the loan hasn't already been handed over. This sends real money and cannot be undone."
+    });
+  };
+
+  const handleSendClosed = () => {
+    setSendRequest(null);
+    loadDetails();
+  };
+
+  const handleReleaseTransfer = (transfer: any) => {
+    showConfirm(
+      'Release transfer',
+      'Only do this if you have checked your M-Pesa statement and no money was sent. Releasing lets you send it again. Continue?',
+      async () => {
+        try {
+          const result = await releaseB2C(transfer.id);
+          showAlert('Released', result.message || 'You can send it again.');
+          loadDetails();
+        } catch (err: any) {
+          showAlert('Error', err.response?.data?.message || err.message);
+        }
+      }
+    );
+  };
+
+  // Status card for a transfer that is in flight, failed, or needs attention
+  const renderTransferCard = (t: any) => {
+    const tone = t.needsAttention ? colors.danger : t.stale ? colors.warning : colors.textSecondary;
+    return (
+      <View style={[styles.transferCard, { backgroundColor: colors.surface, borderColor: tone }]}>
+        <Text style={[styles.transferText, { color: tone }]}>{t.message}</Text>
+        {t.stale && canApprove && (
+          <TouchableOpacity onPress={() => handleReleaseTransfer(t)} hitSlop={8}>
+            <Text style={[styles.logToggle, { color: colors.primary, marginTop: 8 }]}>Release and try again</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  // Who has to approve the next payout, and where that stands
+  const renderPayoutApproval = () => {
+    const info = payoutApprovalInfo;
+    if (!info || !info.turn || !canApprove) return null;
+    const a = info.approval;
+    const amountText = `KES ${Number(info.turn.amount).toLocaleString()}`;
+    const who = `${amountText} to ${info.turn.recipientName}`;
+
+    let tone = colors.textSecondary;
+    let message = '';
+    if (info.paused) {
+      tone = colors.warning;
+      message = `Payouts are paused: this group has ${info.approverCount} of ${info.minApprovers} required approvers. Make another member a treasurer or chair so a second person can approve each payout.`;
+    } else if (!a) {
+      message = `Next payout: ${who}. Another treasurer or chair has to approve it before it can be paid.`;
+    } else if (a.status === 'requested') {
+      message = a.canDecide
+        ? `${a.requestedByName || 'A treasurer'} asked to pay ${who}. Please review and decide.`
+        : `Waiting for another treasurer or chair to approve paying ${who}.`;
+    } else if (a.status === 'approved') {
+      tone = a.outdated ? colors.warning : colors.success;
+      message = a.outdated
+        ? `The payout amount changed since this was approved. Cancel it and ask for approval again.`
+        : `Approved by ${a.decidedByName || 'another approver'}: ${who}. You can pay it out now.`;
+    } else if (a.status === 'rejected') {
+      tone = colors.danger;
+      message = `${a.decidedByName || 'Another approver'} rejected paying ${who}. You can ask again if things changed.`;
+    }
+
+    const canAsk = !info.paused && (!a || a.status === 'rejected');
+    return (
+      <View style={[styles.transferCard, { backgroundColor: colors.surface, borderColor: tone }]}>
+        <Text style={[styles.noticeTitle, { color: colors.text }]}>Payout approval</Text>
+        <Text style={[styles.transferText, { color: tone }]}>{message}</Text>
+
+        {canAsk && (
+          <TouchableOpacity
+            style={[styles.submitButton, { backgroundColor: colors.primary, marginTop: 10, opacity: payoutApprovalBusy ? 0.6 : 1 }]}
+            onPress={handleRequestPayoutApproval}
+            disabled={payoutApprovalBusy}
+          >
+            <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>Ask for approval</Text>
+          </TouchableOpacity>
+        )}
+
+        {a?.canDecide && (
+          <View style={styles.approvalActions}>
+            <TouchableOpacity
+              style={[styles.submitButton, { flex: 1, backgroundColor: colors.success, opacity: payoutApprovalBusy ? 0.6 : 1 }]}
+              onPress={() => handleDecidePayout('approved')}
+              disabled={payoutApprovalBusy}
+            >
+              <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>Approve</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.submitButton, { flex: 1, backgroundColor: colors.danger, opacity: payoutApprovalBusy ? 0.6 : 1 }]}
+              onPress={() => handleDecidePayout('rejected')}
+              disabled={payoutApprovalBusy}
+            >
+              <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>Reject</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {a?.canCancel && (
+          <TouchableOpacity onPress={handleCancelPayoutApproval} hitSlop={8} disabled={payoutApprovalBusy}>
+            <Text style={[styles.logToggle, { color: colors.primary, marginTop: 10 }]}>
+              {a.status === 'approved' ? 'Take back approval' : 'Cancel request'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  // Cash payments waiting for a treasurer / chair to confirm, plus the latest answers for the person who paid
+  const renderCashClaims = (kind: 'contribution' | 'loan_repayment', loanId?: number) => {
+    const ofKind = cashClaims.filter((c: any) => c.kind === kind && (loanId === undefined || c.loanId === loanId));
+    const pending = ofKind.filter((c: any) => c.status === 'pending');
+    const recentlyDecided = ofKind
+      .filter(
+        (c: any) =>
+          (c.status === 'confirmed' || c.status === 'rejected') &&
+          c.payerId === myUserId &&
+          !c.dismissed &&
+          c.decidedAt &&
+          Date.now() - new Date(c.decidedAt).getTime() < 3 * 24 * 60 * 60 * 1000
+      )
+      .slice(0, 2);
+    const shown = [...pending, ...recentlyDecided];
+    if (shown.length === 0) return null;
+
+    return (
+      <View>
+        {shown.map((c: any) => {
+          let tone = colors.textSecondary;
+          let message = '';
+          if (c.status === 'pending' && c.canConfirm) {
+            tone = colors.warning;
+            message = `${c.payerName} says they handed you KES ${Number(c.claimedAmount).toLocaleString()} in cash. Confirm what you received.`;
+          } else if (c.status === 'pending') {
+            tone = colors.warning;
+            message = `Waiting for ${c.receiverName} to confirm your KES ${Number(c.claimedAmount).toLocaleString()} cash payment. It is recorded once they do.`;
+          } else if (c.status === 'confirmed') {
+            tone = colors.success;
+            message =
+              c.confirmedAmount !== null && c.confirmedAmount !== c.claimedAmount
+                ? `${c.receiverName} confirmed KES ${Number(c.confirmedAmount).toLocaleString()} (you said KES ${Number(c.claimedAmount).toLocaleString()}).`
+                : `${c.receiverName} confirmed your KES ${Number(c.claimedAmount).toLocaleString()} cash payment.`;
+          } else {
+            tone = colors.danger;
+            message = `${c.receiverName} did not confirm your KES ${Number(c.claimedAmount).toLocaleString()} cash payment.${c.rejectReason ? ` Reason: “${c.rejectReason}”` : ''}`;
+          }
+          return (
+            <View key={c.id} style={[styles.transferCard, { backgroundColor: colors.surface, borderColor: tone, flexDirection: 'row', alignItems: 'flex-start', gap: 8 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.transferText, { color: tone }]}>{message}</Text>
+                {c.canConfirm && (
+                  <TouchableOpacity onPress={() => setReviewClaim(c)} hitSlop={8}>
+                    <Text style={[styles.logToggle, { color: colors.primary, marginTop: 8 }]}>Review</Text>
+                  </TouchableOpacity>
+                )}
+                {c.canCancel && (
+                  <TouchableOpacity onPress={() => handleCancelClaim(c)} hitSlop={8}>
+                    <Text style={[styles.logToggle, { color: colors.primary, marginTop: 8 }]}>Cancel</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {c.status !== 'pending' && (
+                <TouchableOpacity onPress={() => handleDismissClaim(c)} hitSlop={10} accessibilityLabel="Dismiss">
+                  <Ionicons name="close" size={20} color={tone} />
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
+  // The M-Pesa part of an approved loan card
+  const renderLoanSend = (loan: any) => {
+    const t = b2cFor('loan_disbursement', loan.id);
+    const mine = loan.user_id === myUserId;
+
+    if (t && t.status === 'success' && t.fulfilled) {
+      return (
+        <Text style={[styles.contribCycle, { color: colors.success }]}>
+          {mine ? 'Sent to your M-Pesa' : 'Sent via M-Pesa'}
+          {t.receipt ? ` · ${t.receipt}` : ''}
+        </Text>
+      );
+    }
+    if (mine || !canApprove) return null;
+
+    // Once repayments exist, the money has obviously already changed hands
+    if (!t && parseFloat(loan.totalRepaid) > 0) return null;
+
+    const busy = !!t && (t.status === 'pending' || t.status === 'success');
+    return (
+      <View>
+        {t && renderTransferCard(t)}
+        {!busy && (
+          <TouchableOpacity
+            style={[styles.mpesaButton, { borderColor: colors.primary }]}
+            onPress={() => handleSendLoan(loan)}
+          >
+            <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
+            <Text style={[styles.submitButtonText, { color: colors.primary }]}>
+              Send KES {parseFloat(loan.amount).toLocaleString()} via M-Pesa
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   const handleSelectRole = async (newRole: string) => {
     if (!roleModalMember) return;
     try {
@@ -737,16 +1109,29 @@ const handleUpdateGroup = async () => {
   }
 
 const canApprove = myRole === 'treasurer' || myRole === 'chair';
+const canRemind = canApprove || myRole === 'secretary';
 const approverCount: number = group.approver_count ?? 0;
 const minApprovers: number = group.min_approvers ?? 2;
 const loansPaused = approverCount < minApprovers;
+const nextTurn = rotation.find((r: any) => !r.has_received);
+const nextTransfer = nextTurn ? b2cFor('payout', nextTurn.id) : null;
+const nextTransferBusy = !!nextTransfer && (nextTransfer.status === 'pending' || (nextTransfer.status === 'success' && !nextTransfer.fulfilled));
+// A payout can only be paid once a different treasurer / chair approved this exact payout.
+// If the server has no payout approvals yet (payoutApprovalInfo is null) the old behaviour stays.
+// Treasurers / chairs (other than me) who can confirm that I handed them cash
+const cashApprovers: Approver[] = members
+  .filter((m: any) => (m.role === 'treasurer' || m.role === 'chair') && m.id !== myUserId)
+  .map((m: any) => ({ id: m.id, name: m.full_name, role: m.role }));
+const payoutApproved = payoutApprovalInfo
+  ? !payoutApprovalInfo.paused && payoutApprovalInfo.approval?.status === 'approved' && !payoutApprovalInfo.approval?.outdated
+  : true;
   
 const myCycleRow = contributions.find((c: any) => c.user_id === myUserId && c.cycle_period === group.current_cycle);
 const cycleTarget = parseFloat(group.contribution_amount);
 const cyclePaid = myCycleRow ? parseFloat(myCycleRow.amount) : 0;
 const cycleRemaining = myCycleRow?.status === 'paid' ? 0 : Math.max(cycleTarget - cyclePaid, 0);
 
-const owingMembers = canApprove
+const owingMembers = canRemind
   ? (members
       .filter((m: any) => m.id !== myUserId)
       .map((m: any) => {
@@ -777,6 +1162,7 @@ const cycleProgressText = cycleProgress
     { key: 'loans', label: 'Loans' },
     { key: 'payouts', label: 'Payouts' },
     { key: 'target', label: 'Target' },
+    { key: 'meetings', label: 'Meetings' },
     { key: 'reports', label: 'Reports' }
   ];
 
@@ -907,7 +1293,7 @@ const cycleProgressText = cycleProgress
   <Text style={[styles.sectionHeader, { color: colors.text }]}>Contributions</Text>
   <TouchableOpacity onPress={() => { if (!submitting) setShowLogForm(!showLogForm); }}>
     <Text style={[styles.logToggle, { color: colors.primary }]}>
-      {showLogForm ? 'Cancel' : '+ Log Contribution'}
+      {showLogForm ? 'Cancel' : '+ Pay Contribution'}
     </Text>
   </TouchableOpacity>
 </View>
@@ -928,13 +1314,14 @@ const cycleProgressText = cycleProgress
                     />
                     <TouchableOpacity
                       style={[styles.submitButton, { backgroundColor: colors.primary }]}
-                      onPress={handleLogContribution}
+                      onPress={handleCashContribution}
                       disabled={submitting}
                     >
-                      <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>
-                        {submitting ? 'Saving...' : 'Submit'}
-                      </Text>
+                      <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>I paid cash</Text>
                     </TouchableOpacity>
+                    <Text style={[styles.contribCycle, { color: colors.textMuted, marginTop: 6 }]}>
+                      Cash only counts once the treasurer or chair who received it confirms.
+                    </Text>
                     <TouchableOpacity
                       style={[styles.mpesaButton, { borderColor: colors.primary }]}
                       onPress={handleMpesaContribution}
@@ -946,7 +1333,9 @@ const cycleProgressText = cycleProgress
                   </View>
                 )}
 
-{canApprove && owingMembers.length > 0 && (
+{renderCashClaims('contribution')}
+
+{canRemind && owingMembers.length > 0 && (
   <TouchableOpacity
     style={[styles.owingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
     onPress={() => setShowOwingModal(true)}
@@ -969,7 +1358,7 @@ const cycleProgressText = cycleProgress
   </TouchableOpacity>
 )}
 
-{canApprove && owingMembers.length === 0 && members.length > 1 && (
+{canRemind && owingMembers.length === 0 && members.length > 1 && (
   <View style={[styles.owingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
     <View style={[styles.owingIcon, { backgroundColor: colors.success + '22' }]}>
       <Ionicons name="checkmark" size={20} color={colors.success} />
@@ -1179,7 +1568,9 @@ const cycleProgressText = cycleProgress
         </View>
       )}
 
-      {loan.status === 'approved' && (
+      {loan.status === 'approved' && b2cReady && renderLoanSend(loan)}
+
+      {loan.status === 'approved' && loan.user_id === myUserId && (
         <View style={styles.repayRow}>
           <TextInput
             style={[styles.repayInput, { borderColor: colors.border, backgroundColor: colors.background, color: colors.text }]}
@@ -1192,10 +1583,10 @@ const cycleProgressText = cycleProgress
           <TouchableOpacity
             style={[styles.submitButtonSmall, { backgroundColor: colors.primary }]}
             disabled={repayingId !== null}
-            onPress={() => handleRepay(loan.id)}
+            onPress={() => handleCashRepay(loan)}
           >
             <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>
-              {repayingId === loan.id ? '...' : 'Pay'}
+              Cash
             </Text>
           </TouchableOpacity>
           {loan.user_id === myUserId && (
@@ -1210,6 +1601,13 @@ const cycleProgressText = cycleProgress
           )}
         </View>
       )}
+
+      {loan.status === 'approved' && loan.user_id === myUserId && (
+        <Text style={[styles.contribCycle, { color: colors.textMuted, marginTop: 6 }]}>
+          Cash only counts once the treasurer or chair who received it confirms.
+        </Text>
+      )}
+      {renderCashClaims('loan_repayment', loan.id)}
     </View>
   );
 })}
@@ -1242,7 +1640,9 @@ const cycleProgressText = cycleProgress
                 ))}
                 {rotation.length === 0 && <Text style={[styles.empty, { color: colors.textMuted }]}>No rotation set up yet.</Text>}
 
-                {canApprove && rotation.length > 0 && rotation.some((r: any) => !r.has_received) && (
+                {rotation.length > 0 && rotation.some((r: any) => !r.has_received) && renderPayoutApproval()}
+
+                {canApprove && payoutApproved && rotation.length > 0 && rotation.some((r: any) => !r.has_received) && (
                   <TouchableOpacity
                     style={[styles.submitButton, { backgroundColor: colors.primary, marginTop: 12 }]}
                     onPress={handleMarkPayout}
@@ -1252,6 +1652,21 @@ const cycleProgressText = cycleProgress
                       {markingPayout ? 'Processing...' : 'Mark Next Payout'}
                     </Text>
                   </TouchableOpacity>
+                )}
+
+                {canApprove && b2cReady && nextTurn && (
+                  <View>
+                    {nextTransfer && renderTransferCard(nextTransfer)}
+                    {!nextTransferBusy && payoutApproved && (
+                      <TouchableOpacity
+                        style={[styles.mpesaButton, { borderColor: colors.primary }]}
+                        onPress={handleSendNextPayout}
+                      >
+                        <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
+                        <Text style={[styles.submitButtonText, { color: colors.primary }]}>Send Next Payout via M-Pesa</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 )}
 
                 {rotationCycles.length > 0 && (
@@ -1452,6 +1867,9 @@ const cycleProgressText = cycleProgress
                 )}
               </View>
             )}
+
+     {activeTab === 'meetings' && <MeetingsTab groupId={id as string} />}
+
                         {activeTab === 'reports' && (
               <ReportsTab groupId={id as string} groupName={group.name} />
             )}
@@ -1874,6 +2292,9 @@ const cycleProgressText = cycleProgress
 </Modal>
 
 <MpesaPayModal request={mpesaRequest} groupId={id as string} onClose={handleMpesaClosed} />
+<CashClaimModal request={cashRequest} approvers={cashApprovers} groupId={id as string} onClose={handleCashClosed} />
+<CashReviewModal claim={reviewClaim} onClose={handleReviewClosed} />
+<MpesaSendModal request={sendRequest} groupId={id as string} sandbox={b2cSandbox} onClose={handleSendClosed} />
     </View>
     </>
   );
@@ -1968,4 +2389,7 @@ noticeTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
 noticeBody: { fontSize: 13, lineHeight: 18 },
 mpesaButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 12, borderRadius: 8, borderWidth: 1, marginTop: 10 },
 mpesaSmall: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1 },
+transferCard: { borderRadius: 10, borderWidth: 1, padding: 12, marginTop: 12 },
+transferText: { fontSize: 13, lineHeight: 18 },
+approvalActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
 });

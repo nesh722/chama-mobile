@@ -7,6 +7,7 @@ import { getProfile } from '../../../services/authService';
 import { getMyContributions, getMyDueStatus } from '../../../services/contributionService';
 import { getMyGroups, getMySavingsProgress } from '../../../services/groupService';
 import { getMyLoans, getPendingApprovals } from '../../../services/loanService';
+import { getPendingCashClaims } from '../../../services/cashClaimService';
 import { getMyActivity } from '../../../services/activityService';
 import { getMyNotifications } from '../../../services/notificationService';
 import { getMySavings } from '../../../services/savingsService';
@@ -49,6 +50,7 @@ export default function HomeScreen() {
   { groupName: string; total: number; contributions: number; extra: number }[]>([]);
   const [extraSavingsByGroup, setExtraSavingsByGroup] = useState<{ groupName: string; total: number }[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [pendingCash, setPendingCash] = useState<any[]>([]); // cash members say they handed to me, waiting for my confirmation
   const [dueStatus, setDueStatus] = useState<any[]>([]);
   const [targetProgress, setTargetProgress] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -127,6 +129,12 @@ const groupedSavings: Record<string, number> = {};
       setExtraSavingsByGroup(Object.entries(groupedSavings).map(([groupName, total]) => ({ groupName, total })));
 
       setPendingApprovals(pendingData.pending);
+      try {
+        const cashData = await getPendingCashClaims();
+        setPendingCash(cashData.pending || []);
+      } catch {
+        setPendingCash([]); // cash confirmation is not set up on the server yet; the rest of the dashboard still loads
+      }
       setDueStatus(dueData.due.filter((d: any) => !d.isPaid));
       setTargetProgress(progressData.progress);
       setRecentActivity(activityData.activity.slice(0, 2));
@@ -295,6 +303,26 @@ const groupedSavings: Record<string, number> = {};
               {pendingApprovals.length === 1
                 ? `${pendingApprovals[0].borrower_name} requested KES ${pendingApprovals[0].amount} in ${pendingApprovals[0].group_name}`
                 : `${pendingApprovals.length} loan requests awaiting your decision`}
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primaryText} />
+          </TouchableOpacity>
+        )}
+
+        {pendingCash.length > 0 && (
+          <TouchableOpacity
+            style={[styles.banner, { backgroundColor: colors.primary }]}
+            onPress={() =>
+              router.push({
+                pathname: '/group/[id]',
+                params: { id: String(pendingCash[0].groupId), tab: pendingCash[0].kind === 'loan_repayment' ? 'loans' : 'contributions' }
+              })
+            }
+          >
+            <Ionicons name="cash-outline" size={20} color={colors.primaryText} />
+            <Text style={[styles.bannerText, { color: colors.primaryText }]}>
+              {pendingCash.length === 1
+                ? `${pendingCash[0].payerName} says they handed you KES ${Number(pendingCash[0].claimedAmount).toLocaleString()} in cash (${pendingCash[0].groupName}). Tap to confirm`
+                : `${pendingCash.length} cash payments awaiting your confirmation`}
             </Text>
             <Ionicons name="chevron-forward" size={18} color={colors.primaryText} />
           </TouchableOpacity>
