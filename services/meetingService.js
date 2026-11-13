@@ -41,9 +41,10 @@ export const saveMinutes = async (meetingId, minutes) => {
   return response.data;
 };
 
-export const sendApology = async (meetingId, on) => {
+// reason is optional, e.g. "Sick" (only used when on = true)
+export const sendApology = async (meetingId, on, reason) => {
   const api = await authAxios();
-  const response = await api.post(`/meetings/${meetingId}/apology`, { on });
+  const response = await api.post(`/meetings/${meetingId}/apology`, { on, reason });
   return response.data;
 };
 

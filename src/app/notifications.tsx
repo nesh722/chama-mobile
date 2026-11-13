@@ -106,6 +106,9 @@ export default function NotificationsScreen() {
               ]}
               onPress={() => handlePress(item)}
             >
+            {!!item.group_name && (
+  <Text style={[styles.cardGroup, { color: colors.primary }]}>{item.group_name}</Text>
+)}
               <View style={styles.cardHeader}>
                 <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
                 {!item.is_read && <View style={[styles.dot, { backgroundColor: colors.primary }]} />}
@@ -137,4 +140,5 @@ const styles = StyleSheet.create({
   clearText: { fontSize: 14, fontWeight: '600' },
   headerLeft: { flexDirection: 'row', alignItems: 'center' },
 backButton: { marginLeft: -6, marginRight: 4 },
+cardGroup: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 },
 });

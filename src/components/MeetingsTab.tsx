@@ -43,7 +43,7 @@ type MeetingItem = {
   myStatus: 'present' | 'apology' | 'absent' | null;
 };
 type Notice = { id: number; title: string; body: string; authorName: string; createdAt: string };
-type AttendanceRow = { userId: number; name: string; role: string; status: 'present' | 'apology' | 'absent' | null };
+type AttendanceRow = { userId: number; name: string; role: string; status: 'present' | 'apology' | 'absent' | null; reason: string | null };
 type Detail = {
   canRecord: boolean;
   meeting: { id: number; title: string; meetingDate: string; venue: string | null; agenda: string | null; minutes: string | null; status: string };
@@ -105,6 +105,10 @@ export default function MeetingsTab({ groupId }: Props) {
   const [marks, setMarks] = useState<Record<number, string>>({});
   const [minutesText, setMinutesText] = useState('');
   const [editingMinutes, setEditingMinutes] = useState(false);
+
+  // apology reason form
+  const [apologyFor, setApologyFor] = useState<number | null>(null);
+  const [apologyReason, setApologyReason] = useState('');
 
   const [busy, setBusy] = useState(false);
 
@@ -228,9 +232,16 @@ export default function MeetingsTab({ groupId }: Props) {
 
   const toggleApology = async (item: { id: number; myStatus: string | null }) => {
     if (busy) return;
+    if (item.myStatus !== 'apology') {
+      // sending: ask for an optional reason first (the detail window closes so the two windows never overlap)
+      setApologyReason('');
+      setDetail(null);
+      setApologyFor(item.id);
+      return;
+    }
     setBusy(true);
     try {
-      await sendApology(item.id, item.myStatus !== 'apology');
+      await sendApology(item.id, false);
       await load();
       if (detail) await openDetail(detail.meeting.id);
     } catch (err: any) {
@@ -238,6 +249,28 @@ export default function MeetingsTab({ groupId }: Props) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const submitApology = async () => {
+    if (apologyFor === null || busy) return;
+    const id = apologyFor;
+    setBusy(true);
+    try {
+      await sendApology(id, true, apologyReason.trim());
+      setApologyFor(null);
+      await load();
+      await openDetail(id);
+    } catch (err: any) {
+      showAlert('Error', errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeApology = async () => {
+    const id = apologyFor;
+    setApologyFor(null);
+    if (id !== null) await openDetail(id);
   };
 
   const setMark = (userId: number, status: string) =>
@@ -483,6 +516,27 @@ export default function MeetingsTab({ groupId }: Props) {
         </TouchableWithoutFeedback>
       </Modal>
 
+      {/* ----- Apology reason modal ----- */}
+      <Modal visible={apologyFor !== null} transparent animationType="fade" onRequestClose={closeApology}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.overlay}>
+            <View style={[styles.modal, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Send apology</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Reason (optional)</Text>
+              <TextInput value={apologyReason} onChangeText={setApologyReason} placeholder="e.g. I'm sick, travelling, at work" placeholderTextColor={colors.placeholder}
+                multiline maxLength={255} style={[styles.input, styles.multi, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
+              <Text style={[styles.hint, { color: colors.textMuted }]}>Only the secretary and chair will see this.</Text>
+              <TouchableOpacity style={[styles.primary, { backgroundColor: colors.primary, opacity: busy ? 0.6 : 1 }]} onPress={submitApology} disabled={busy}>
+                {busy ? <ActivityIndicator color={colors.primaryText} /> : <Text style={{ color: colors.primaryText, fontWeight: '600' }}>Send apology</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.secondary} onPress={closeApology}>
+                <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Back</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       {/* ----- Meeting detail modal ----- */}
       <Modal visible={detail !== null} transparent animationType="fade" onRequestClose={() => setDetail(null)}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -535,9 +589,14 @@ export default function MeetingsTab({ groupId }: Props) {
                         const current = detail.canRecord && recordingOpen ? marks[a.userId] || null : a.status;
                         return (
                           <View key={a.userId} style={[styles.attRow, { borderColor: colors.border }]}>
-                            <Text style={[styles.attName, { color: colors.text }]} numberOfLines={1}>
-                              {a.name}
-                            </Text>
+                            <View style={{ flexShrink: 1 }}>
+                              <Text style={[styles.attName, { color: colors.text }]} numberOfLines={1}>
+                                {a.name}
+                              </Text>
+                              {a.status === 'apology' && !!a.reason && (
+                                <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>"{a.reason}"</Text>
+                              )}
+                            </View>
                             {detail.canRecord && recordingOpen ? (
                               <View style={styles.chips}>
                                 {(['present', 'apology', 'absent'] as const).map((s) => (

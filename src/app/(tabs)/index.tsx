@@ -416,7 +416,12 @@ const groupedSavings: Record<string, number> = {};
     <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
   </View>
 </View>
-            <Text style={[styles.rowCardTitle, { color: colors.text, marginTop: 6 }]}>{latestNotification.title}</Text>
+{!!latestNotification.group_name && (
+  <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', color: colors.primary, marginTop: 6 }}>
+    {latestNotification.group_name}
+  </Text>
+)}
+            <Text style={[styles.rowCardTitle, { color: colors.text, marginTop: 2 }]}>{latestNotification.title}</Text>
             <Text style={[styles.rowCardSubtitle, { color: colors.textSecondary }]}>{latestNotification.message}</Text>
           </TouchableOpacity>
         )}

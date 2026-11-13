@@ -3,6 +3,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Clipboard from 'expo-clipboard';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
+import MemberRoleSheet, { MemberList } from '../../components/MemberRoleSheet';
 import {
   ActivityIndicator,
   Keyboard,
@@ -1259,23 +1260,12 @@ const cycleProgressText = cycleProgress
     {approverCount} of {minApprovers} required approvers. Tap a member's role to make them treasurer or a second chair.
   </Text>
 )}
-                {members.map((m: any) => (
-                  <View key={m.id} style={[styles.memberRow, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.memberName, { color: colors.text }]}>{m.full_name}</Text>
-                    {canApprove && m.id !== myUserId ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <TouchableOpacity onPress={() => setRoleModalMember({ id: m.id, name: m.full_name, currentRole: m.role })}>
-                          <Text style={[styles.memberRoleEditable, { color: colors.primary }]}>{m.role} ✎</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleRemoveMember(m.id, m.full_name)}>
-                          <Ionicons name="trash-outline" size={16} color={colors.danger} />
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <Text style={[styles.memberRole, { color: colors.primary }]}>{m.role}</Text>
-                    )}
-                  </View>
-                ))}
+                <MemberList
+                  members={members}
+                  myUserId={myUserId}
+                  canEdit={canApprove}
+                  onPressMember={(m) => setRoleModalMember({ id: m.id, name: m.full_name, currentRole: m.role })}
+                />
                 {group.created_by === myUserId && (
                   <TouchableOpacity
                     style={[styles.deleteGroupButton, { backgroundColor: colors.dangerSurface }]}
@@ -1876,37 +1866,16 @@ const cycleProgressText = cycleProgress
           </View>
       </KeyboardAwareScrollView>
 
-      <Modal
-        visible={roleModalMember !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setRoleModalMember(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Change Role</Text>
-            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>{roleModalMember?.name}</Text>
-
-            {['chair', 'treasurer', 'secretary', 'member']
-              .filter((r) => r !== roleModalMember?.currentRole)
-              .map((r) => (
-                <TouchableOpacity
-                  key={r}
-                  style={[styles.roleOption, { backgroundColor: colors.surfaceAlt }]}
-                  onPress={() => handleSelectRole(r)}
-                >
-                  <Text style={[styles.roleOptionText, { color: colors.primary }]}>
-                    {r.charAt(0).toUpperCase() + r.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-
-            <TouchableOpacity style={styles.modalCancel} onPress={() => setRoleModalMember(null)}>
-              <Text style={[styles.modalCancelText, { color: colors.textMuted }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <MemberRoleSheet
+        member={roleModalMember}
+        onSelectRole={handleSelectRole}
+        onRemove={() => {
+          const m = roleModalMember;
+          setRoleModalMember(null);
+          if (m) handleRemoveMember(m.id, m.name);
+        }}
+        onClose={() => setRoleModalMember(null)}
+      />
             <Modal
         visible={showTabMenu}
         transparent
