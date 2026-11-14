@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Clipboard from 'expo-clipboard';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import MemberRoleSheet, { MemberList } from '../../components/MemberRoleSheet';
 import {
   ActivityIndicator,
@@ -56,6 +56,7 @@ import { getB2CTransfers, releaseB2C } from '../../../services/mpesaB2CService';
 import { keyFor, isNoAnswer, PendingKey } from '../../../utils/requestKey';
 import { SERVER_BASE_URL } from '../../../config/api';
 import { describeInterest, describeInterestShort, formatMoney } from '../../../utils/describeInterest';
+import { GroupHeader, TabPills } from '../../components/GroupHeader';
 
 type TabKey = 'overview' | 'contributions' | 'loans' | 'payouts' | 'target' | 'reports' | 'meetings';
 const TAB_KEYS: TabKey[] = ['overview', 'contributions', 'loans', 'payouts', 'target', 'reports', 'meetings'];
@@ -79,7 +80,7 @@ const limitNumber = (text: string, prev: string, max: number, decimals = 2) => {
 
 export default function GroupDetailsScreen() {
   const { colors } = useAppTheme();
-  const { id, tab } = useLocalSearchParams();
+  const { id, tab, action, amount: presetAmount } = useLocalSearchParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>(
   TAB_KEYS.includes(tab as TabKey) ? (tab as TabKey) : 'overview');
@@ -94,7 +95,6 @@ export default function GroupDetailsScreen() {
   const [myRole, setMyRole] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showTabMenu, setShowTabMenu] = useState(false);
 
   const [showLogForm, setShowLogForm] = useState(false);
   const [amount, setAmount] = useState('');
@@ -267,6 +267,26 @@ const maxInterestRate = MAX_RATE_BY_PERIOD[interestPeriod];
       loadDetails();
     }, [id])
   );
+    // Home shortcuts: open the right tab and the right form once the group has loaded
+  const actionDone = useRef(false);
+  useEffect(() => {
+    if (!group || !action || actionDone.current) return;
+    actionDone.current = true;
+    if (action === 'request-loan') {
+      setActiveTab('loans');
+      setShowLoanForm(true);
+    } else if (action === 'log-savings') {
+      setActiveTab('target');
+      setShowSavingsForm(true);
+    } else if (action === 'invite') {
+      setActiveTab('overview');
+      handleShowInvite();
+    } else if (action === 'pay') {
+      setActiveTab('contributions');
+      setShowLogForm(true);
+      if (presetAmount) setAmount(String(presetAmount));
+    }
+  }, [group]);
 
   const reportActionError = (err: any, pending: { current: PendingKey }, what: string) => {
   if (err.response && err.response.status !== 409) {
@@ -1181,28 +1201,18 @@ const cycleProgressText = cycleProgress
   }}
 />
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-            <View style={styles.headerBlock}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.title, { color: colors.text }]}>{group.name}</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{group.description}</Text>
-          </View>
-          {canApprove && (
-            <TouchableOpacity onPress={handleOpenEditGroup} hitSlop={8} style={{ paddingTop: 4 }}>
-              <Ionicons name="create-outline" size={22} color={colors.primary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-            <TouchableOpacity
-        style={[styles.tabDropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}
-        onPress={() => setShowTabMenu(true)}
-      >
-        <Text style={[styles.tabDropdownText, { color: colors.text }]}>
-          {tabs.find((t) => t.key === activeTab)?.label}
-        </Text>
-        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-      </TouchableOpacity>
+      <GroupHeader
+        groupId={group.id}
+        name={group.name}
+        description={group.description}
+        amount={group.contribution_amount}
+        frequency={group.contribution_frequency}
+        role={myRole}
+        memberCount={members.length}
+        canEdit={canApprove}
+        onEdit={handleOpenEditGroup}
+      />
+      <TabPills tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       <KeyboardAwareScrollView
   style={styles.container}
@@ -1213,10 +1223,6 @@ const cycleProgressText = cycleProgress
           <View>
             {activeTab === 'overview' && (
               <View>
-                <Text style={[styles.detail, { color: colors.text }]}>
-                  KES {group.contribution_amount} · {group.contribution_frequency}
-                </Text>
-
                 <TouchableOpacity onPress={handleShowInvite}>
                   <Text style={[styles.logToggle, { color: colors.primary, marginTop: 8 }]}>
                     {showInvite ? 'Hide Invite QR / Link' : 'Show Invite QR / Link'}
@@ -1876,43 +1882,8 @@ const cycleProgressText = cycleProgress
         }}
         onClose={() => setRoleModalMember(null)}
       />
-            <Modal
-        visible={showTabMenu}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowTabMenu(false)}
-      >
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowTabMenu(false)}>
-          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Jump to section</Text>
-            {tabs.map((tab) => (
-              <TouchableOpacity
-                key={tab.key}
-                style={[
-                  styles.roleOption,
-                  { backgroundColor: activeTab === tab.key ? colors.primary : colors.surfaceAlt }
-                ]}
-                onPress={() => {
-                  setActiveTab(tab.key);
-                  setShowTabMenu(false);
-                }}
-              >
-                <Text style={[
-                  styles.roleOptionText,
-                  { color: activeTab === tab.key ? colors.primaryText : colors.primary }
-                ]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowTabMenu(false)}>
-              <Text style={[styles.modalCancelText, { color: colors.textMuted }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
-            <Modal visible={showTargetMenu} transparent animationType="fade" onRequestClose={() => setShowTargetMenu(false)}>
+      <Modal visible={showTargetMenu} transparent animationType="fade" onRequestClose={() => setShowTargetMenu(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowTargetMenu(false)}>
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Savings Target</Text>

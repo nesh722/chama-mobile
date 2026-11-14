@@ -66,3 +66,10 @@ export const deleteAnnouncement = async (id) => {
   const response = await api.delete(`/announcements/${id}`);
   return response.data;
 };
+
+// Next scheduled meetings across all my groups (Home screen)
+export const getUpcomingMeetings = async () => {
+  const api = await authAxios();
+  const response = await api.get('/meetings/upcoming');
+  return response.data; // { meetings: [{ id, groupId, groupName, title, meetingDate, venue, apologySent }] }
+};

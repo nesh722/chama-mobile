@@ -79,12 +79,12 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = () => {
-  showConfirm('Log Out', 'Are you sure you want to log out?', async () => {
-    await unregisterPushToken(); // must run before clearAuth, which deletes the login token
-    await clearAuth();
-    router.replace('/login');
-  });
-};
+    showConfirm('Log Out', 'Are you sure you want to log out?', async () => {
+      await unregisterPushToken(); // must run before clearAuth, which deletes the login token
+      await clearAuth();
+      router.replace('/login');
+    });
+  };
 
   const handleDeleteAccount = () => {
     showConfirm(
@@ -111,6 +111,22 @@ export default function ProfileScreen() {
     );
   }
 
+  const memberSince = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
+    : '';
+
+  const accountRows = [
+    { icon: 'person-outline', label: 'Edit Profile', color: colors.primary, route: '/edit-profile' },
+    { icon: 'mail-outline', label: 'Change Email', color: colors.success, route: '/change-email' },
+    { icon: 'lock-closed-outline', label: 'Change Password', color: '#8b5cf6', route: '/change-password' }
+  ];
+
+  const themes = [
+    { key: 'light', label: 'Light', icon: 'sunny-outline' },
+    { key: 'dark', label: 'Dark', icon: 'moon-outline' },
+    { key: 'system', label: 'System', icon: 'phone-portrait-outline' }
+  ] as const;
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView
@@ -120,105 +136,96 @@ export default function ProfileScreen() {
       >
         <Text style={[styles.header, { color: colors.text }]}>Profile</Text>
 
-        <View style={styles.avatarSection}>
-          <TouchableOpacity onPress={handlePickImage} disabled={uploading}>
-            {user?.avatar_url ? (
-              <Image
-                source={{ uri: `${SERVER_BASE_URL}${user.avatar_url}` }}
-                style={[styles.avatarImage, { backgroundColor: colors.surface }]}
-              />
-            ) : (
-              <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary }]}>
-                <Text style={styles.avatarInitials}>{getInitials(user?.full_name)}</Text>
-              </View>
-            )}
-            <View style={[styles.editBadge, { borderColor: colors.background }]}>
-              {uploading ? (
-                <ActivityIndicator size="small" color="#fff" />
+        {/* Hero: photo, name, contact details */}
+        <View style={[styles.hero, { backgroundColor: colors.surface }]}>
+          <TouchableOpacity onPress={handlePickImage} disabled={uploading} activeOpacity={0.85}>
+            <View style={[styles.avatarRing, { borderColor: colors.primary + '66' }]}>
+              {user?.avatar_url ? (
+                <Image
+                  source={{ uri: `${SERVER_BASE_URL}${user.avatar_url}` }}
+                  style={[styles.avatarImage, { backgroundColor: colors.background }]}
+                />
               ) : (
-                <Ionicons name="camera" size={14} color="#fff" />
+                <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.avatarInitials}>{getInitials(user?.full_name)}</Text>
+                </View>
               )}
             </View>
+            <View style={[styles.editBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
+              {uploading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="camera" size={14} color="#fff" />}
+            </View>
           </TouchableOpacity>
+
           <Text style={[styles.name, { color: colors.text }]}>{user?.full_name}</Text>
+          {!!memberSince && <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 2 }}>Member since {memberSince}</Text>}
+
+          {user && (
+            <View style={[styles.contact, { borderTopColor: colors.border }]}>
+              <View style={styles.infoRow}>
+                <View style={[styles.smallIcon, { backgroundColor: colors.primary + '1f' }]}>
+                  <Ionicons name="mail-outline" size={15} color={colors.primary} />
+                </View>
+                <Text style={[styles.detail, { color: colors.text }]} numberOfLines={1}>{user.email}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <View style={[styles.smallIcon, { backgroundColor: colors.success + '1f' }]}>
+                  <Ionicons name="call-outline" size={15} color={colors.success} />
+                </View>
+                <Text style={[styles.detail, { color: colors.text }]}>{user.phone}</Text>
+              </View>
+            </View>
+          )}
         </View>
 
-        {user && (
-          <View style={[styles.card, { backgroundColor: colors.surface }]}>
-            <View style={styles.infoRow}>
-              <Ionicons name="mail-outline" size={18} color={colors.textSecondary} style={styles.icon} />
-              <Text style={[styles.detail, { color: colors.text }]}>{user.email}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Ionicons name="call-outline" size={18} color={colors.textSecondary} style={styles.icon} />
-              <Text style={[styles.detail, { color: colors.text }]}>{user.phone}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} style={styles.icon} />
-              <Text style={[styles.detail, { color: colors.text }]}>
-                Member since {new Date(user.created_at).toLocaleDateString()}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={[styles.settingsButton, { backgroundColor: colors.surface }]}
-          onPress={() => router.push('/edit-profile')}
-        >
-          <Ionicons name="person-outline" size={18} color={colors.text} style={{ marginRight: 8 }} />
-          <Text style={[styles.settingsButtonText, { color: colors.text }]}>Edit Profile</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.settingsButton, { backgroundColor: colors.surface }]}
-          onPress={() => router.push('/change-email')}
-        >
-          <Ionicons name="mail-outline" size={18} color={colors.text} style={{ marginRight: 8 }} />
-          <Text style={[styles.settingsButtonText, { color: colors.text }]}>Change Email</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.settingsButton, { backgroundColor: colors.surface }]}
-          onPress={() => router.push('/change-password')}
-        >
-          <Ionicons name="lock-closed-outline" size={18} color={colors.text} style={{ marginRight: 8 }} />
-          <Text style={[styles.settingsButtonText, { color: colors.text }]}>Change Password</Text>
-        </TouchableOpacity>
-
-        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>Appearance</Text>
-        <View style={styles.themeRow}>
-          {(['light', 'dark', 'system'] as const).map((m) => (
+        {/* Account settings, one grouped list */}
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>ACCOUNT</Text>
+        <View style={[styles.list, { backgroundColor: colors.surface }]}>
+          {accountRows.map((r, i) => (
             <TouchableOpacity
-              key={m}
-              style={[
-                styles.themeOption,
-                { backgroundColor: mode === m ? colors.primary : colors.surface }
-              ]}
-              onPress={() => setMode(m)}
+              key={r.label}
+              style={[styles.listRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
+              onPress={() => router.push(r.route as any)}
+              activeOpacity={0.7}
             >
-              <Text
-                style={[
-                  styles.themeOptionText,
-                  { color: mode === m ? colors.primaryText : colors.text }
-                ]}
-              >
-                {m.charAt(0).toUpperCase() + m.slice(1)}
-              </Text>
+              <View style={[styles.rowIcon, { backgroundColor: r.color + '24' }]}>
+                <Ionicons name={r.icon as any} size={18} color={r.color} />
+              </View>
+              <Text style={[styles.settingsButtonText, { color: colors.text }]}>{r.label}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
             </TouchableOpacity>
           ))}
         </View>
 
+        {/* Appearance */}
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>APPEARANCE</Text>
+        <View style={[styles.segment, { backgroundColor: colors.surface }]}>
+          {themes.map((t) => {
+            const active = mode === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                style={[styles.segmentItem, active && { backgroundColor: colors.primary }]}
+                onPress={() => setMode(t.key)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name={t.icon as any} size={16} color={active ? colors.primaryText : colors.textSecondary} />
+                <Text style={[styles.themeOptionText, { color: active ? colors.primaryText : colors.text }]}>{t.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         <TouchableOpacity
-          style={[styles.logoutButton, { backgroundColor: colors.danger }]}
+          style={[styles.logoutButton, { backgroundColor: colors.danger + '1a', borderColor: colors.danger + '66' }]}
           onPress={handleLogout}
+          activeOpacity={0.8}
         >
-          <Ionicons name="log-out-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.logoutText}>Log Out</Text>
+          <Ionicons name="log-out-outline" size={18} color={colors.danger} style={{ marginRight: 8 }} />
+          <Text style={[styles.logoutText, { color: colors.danger }]}>Log Out</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount}>
-          <Text style={[styles.deleteAccountText, { color: colors.danger }]}>Delete Account</Text>
+          <Text style={[styles.deleteAccountText, { color: colors.textMuted }]}>Delete Account</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -227,56 +234,30 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 40 },
+  scrollContent: { padding: 16, paddingBottom: 110 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { fontSize: 24, fontWeight: 'bold', marginBottom: 16 },
-  avatarSection: { alignItems: 'center', marginBottom: 24 },
+  header: { fontSize: 26, fontWeight: 'bold', marginBottom: 16 },
+  hero: { borderRadius: 22, padding: 20, alignItems: 'center', marginBottom: 8 },
+  avatarRing: { width: 108, height: 108, borderRadius: 54, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
   avatarImage: { width: 96, height: 96, borderRadius: 48 },
-  avatarPlaceholder: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
+  avatarPlaceholder: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center' },
   avatarInitials: { color: '#fff', fontSize: 32, fontWeight: 'bold' },
-  editBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#111',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2
-  },
-  name: { fontSize: 18, fontWeight: '600', marginTop: 12 },
-  card: { padding: 20, borderRadius: 10, marginBottom: 20 },
-  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  icon: { marginRight: 10 },
-  detail: { fontSize: 14 },
-  settingsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 8,
-    marginBottom: 10
-  },
-  settingsButtonText: { fontSize: 15, fontWeight: '500' },
-  sectionLabel: { fontSize: 13, fontWeight: '600', marginTop: 12, marginBottom: 8 },
-  themeRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  themeOption: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  editBadge: { position: 'absolute', bottom: 2, right: 2, borderRadius: 14, width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 3 },
+  name: { fontSize: 20, fontWeight: '700', marginTop: 12 },
+  contact: { alignSelf: 'stretch', marginTop: 16, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  smallIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  detail: { fontSize: 14, flex: 1 },
+  sectionLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.8, marginTop: 20, marginBottom: 8, marginLeft: 4 },
+  list: { borderRadius: 16, overflow: 'hidden' },
+  listRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14 },
+  rowIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  settingsButtonText: { fontSize: 15, fontWeight: '600', flex: 1 },
+  segment: { flexDirection: 'row', borderRadius: 14, padding: 4, gap: 4 },
+  segmentItem: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 11 },
   themeOptionText: { fontWeight: '600', fontSize: 13 },
-  logoutButton: {
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center'
-  },
-  logoutText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  deleteAccountButton: { padding: 14, alignItems: 'center', marginTop: 10 },
-  deleteAccountText: { fontSize: 14, fontWeight: '500' }
+  logoutButton: { padding: 14, borderRadius: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', borderWidth: 1, marginTop: 26 },
+  logoutText: { fontWeight: '700', fontSize: 16 },
+  deleteAccountButton: { padding: 14, alignItems: 'center', marginTop: 6 },
+  deleteAccountText: { fontSize: 13, fontWeight: '500' }
 });

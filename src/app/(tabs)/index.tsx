@@ -15,6 +15,9 @@ import { useAppTheme } from '../../../context/ThemeContext';
 import { formatCycleLabel } from '../../../utils/formatCycleLabel';
 import { ACTIVITY_ICONS } from '../../../utils/activityIcons';
 import { formatMoney } from '../../../utils/describeInterest';
+import { Avatar, GroupCarousel, GroupPickerSheet, GroupSaving, HeroCard, NextMeetingCard, PickGroup, QuickAction, QuickActionGrid, SectionHeader } from '../../components/HomeParts';
+import { getUpcomingMeetings } from '../../../services/meetingService';
+import { showAlert } from '../../../services/alertService';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -58,6 +61,10 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [openLoans, setOpenLoans] = useState<any[]>([]);
+  const [myGroups, setMyGroups] = useState<any[]>([]);
+  const [upcoming, setUpcoming] = useState<any[]>([]);
+  const [picker, setPicker] = useState<{ tab: string; action?: string; title: string; groups: PickGroup[] } | null>(null);
+  const [scrolled, setScrolled] = useState(false);
 
   const loadDashboard = async () => {
     try {
@@ -87,6 +94,7 @@ export default function HomeScreen() {
 
       setUser(profileData.user);
       setGroupCount(groupsData.groups.length);
+      setMyGroups(groupsData.groups);
       setActiveLoanCount(
         loansData.loans.filter((l: any) => l.status === 'approved' || l.status === 'requested').length
       );
@@ -135,6 +143,12 @@ const groupedSavings: Record<string, number> = {};
       } catch {
         setPendingCash([]); // cash confirmation is not set up on the server yet; the rest of the dashboard still loads
       }
+      try {
+        const meetingData = await getUpcomingMeetings();
+        setUpcoming(meetingData.meetings || []);
+      } catch {
+        setUpcoming([]); // meetings are not set up on the server yet; the rest of Home still loads
+      }
       setDueStatus(dueData.due.filter((d: any) => !d.isPaid));
       setTargetProgress(progressData.progress);
       setRecentActivity(activityData.activity.slice(0, 2));
@@ -167,49 +181,114 @@ const groupedSavings: Record<string, number> = {};
   .filter((l: any) => l.status === 'approved')
   .reduce((sum: number, l: any) => sum + (Number(l.totalOutstanding) || 0), 0);
 
-  return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
-      <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.topRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.greeting, { color: colors.text }]}>
-              {user ? `${getGreeting()}, ${user.full_name.split(' ')[0]}` : getGreeting()} 👋
-            </Text>
-            <Text style={[styles.subGreeting, { color: colors.textSecondary }]}>
-              Here's your savings overview
-            </Text>
-          </View>
-          <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/notifications')}>
-              <Ionicons name="notifications-outline" size={22} color={colors.text} />
-              {unreadCount > 0 && (
-                <View style={[styles.badge, { backgroundColor: colors.danger }]}>
-                  <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={toggleTheme}>
-              <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
+  const openGroup = (groupId: any, tab?: string, extra?: Record<string, string>) =>
+    router.push({ pathname: '/group/[id]', params: { id: String(groupId), ...(tab ? { tab } : {}), ...(extra || {}) } });
 
-        <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.statValue, { color: colors.primary }]}>{groupCount}</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Groups</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.statValue, { color: colors.primary }]}>{activeLoanCount}</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Active Loans</Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.statValue, { color: colors.primary }]}>
-              KES {totalContributed.toLocaleString()}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Total Saved</Text>
-          </View>
+  const goTo = (tab: string, action: string | undefined, g: PickGroup) =>
+    openGroup(g.id, tab, { ...(action ? { action } : {}), ...(g.amount ? { amount: String(g.amount) } : {}) });
+
+  const uniqGroups = (list: PickGroup[]) => list.filter((g, i) => list.findIndex((x) => String(x.id) === String(g.id)) === i);
+
+  // One group to choose from: go straight in. Several: ask which. None known: all my groups.
+  const pickGroup = (tab: string, title: string, candidates: PickGroup[], action?: string) => {
+    const list = candidates.length > 0 ? candidates : myGroups.map((g: any) => ({ id: g.id, name: g.name }));
+    if (list.length === 0) return router.push('/(tabs)/groups');
+    if (list.length === 1) return goTo(tab, action, list[0]);
+    setPicker({ tab, action, title, groups: list });
+  };
+
+  const openLoansAction = () =>
+    pickGroup('loans', 'Open loans in which group?', uniqGroups(openLoans.map((l: any) => ({ id: l.group_id, name: l.group_name }))));
+
+  const owedOf = (d: any) => (d.paidSoFar > 0 ? d.remaining : d.amount);
+
+  const payNow = () => {
+    const due = dueStatus.map((d: any) => ({
+      id: d.groupId,
+      name: d.groupName,
+      subtitle: `KES ${Number(owedOf(d)).toLocaleString()} due`,
+      amount: String(Number(owedOf(d)))
+    }));
+    if (due.length === 0) return showAlert('All paid up', 'You have no contributions due right now.');
+    pickGroup('contributions', 'Pay which group?', due, 'pay');
+  };
+
+  const quickActions: QuickAction[] = [
+    { icon: 'card-outline', label: 'Pay now', color: colors.primary, onPress: payNow },
+    { icon: 'add-circle-outline', label: 'Request loan', color: colors.success, onPress: () => pickGroup('loans', 'Request a loan in which group?', [], 'request-loan') },
+    { icon: 'trending-up-outline', label: 'Save extra', color: '#8b5cf6', onPress: () => pickGroup('target', 'Save extra in which group?', [], 'log-savings') },
+    { icon: 'person-add-outline', label: 'Invite', color: colors.warning, onPress: () => pickGroup('overview', 'Invite to which group?', [], 'invite') }
+  ];
+
+  const groupSavings: GroupSaving[] = contributionsByGroup.map((g) => {
+    const p = targetProgress.find((t: any) => t.groupName === g.groupName);
+    const grp = myGroups.find((x: any) => x.name === g.groupName);
+    return {
+      groupId: grp?.id ?? p?.groupId,
+      name: g.groupName,
+      total: g.total,
+      contributions: g.contributions,
+      extra: g.extra,
+      progress: p
+        ? { pct: p.targetToDate > 0 ? Math.min((p.paidToDate / p.targetToDate) * 100, 100) : 0, onTrack: p.onTrack, shortfall: p.shortfall }
+        : null
+    };
+  });
+
+  return (
+  <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
+    {/* FIXED HEADER: outside the ScrollView, so it never scrolls */}
+    <View
+      style={[
+        styles.topRow,
+        {
+          backgroundColor: colors.background,
+          borderBottomColor: scrolled ? colors.border : 'transparent'
+        }
+      ]}
+    >
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        {user && <Avatar name={user.full_name} />}
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.subGreeting, { color: colors.textSecondary, marginTop: 0 }]}>{getGreeting()} 👋</Text>
+          <Text style={[styles.greeting, { color: colors.text, fontSize: 22 }]} numberOfLines={1}>
+            {user ? user.full_name.split(' ')[0] : ''}
+          </Text>
         </View>
+      </View>
+      <View style={styles.headerIcons}>
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/notifications')}>
+          <Ionicons name="notifications-outline" size={22} color={colors.text} />
+          {unreadCount > 0 && (
+            <View style={[styles.badge, { backgroundColor: colors.danger }]}>
+              <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconButton} onPress={toggleTheme}>
+          <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+    </View>
+
+    {/* SCROLLING BODY */}
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={{ padding: 20, paddingTop: 12 }}
+      showsVerticalScrollIndicator={false}
+      scrollEventThrottle={16}
+      onScroll={(e) => setScrolled(e.nativeEvent.contentOffset.y > 4)}
+    >
+
+                <HeroCard
+          total={totalContributed}
+          groupCount={groupCount}
+          activeLoans={activeLoanCount}
+          owed={totalOwed}
+          onPressLoans={openLoansAction}
+        />
+        <QuickActionGrid actions={quickActions} />
+        <NextMeetingCard meetings={upcoming} onPress={(m) => openGroup(m.groupId, 'meetings')} />
 
         {openLoans.length > 0 && (
   <View style={styles.section}>
@@ -229,7 +308,7 @@ const groupedSavings: Record<string, number> = {};
       return (
         <TouchableOpacity
           key={loan.id}
-          style={[styles.rowCard, styles.loanRowCard, { backgroundColor: colors.surface }]}
+          style={[styles.rowCard, styles.loanRowCard, { backgroundColor: colors.surface, borderLeftWidth: 4, borderLeftColor: colors.warning }]}
           onPress={() =>
             router.push({ pathname: '/group/[id]', params: { id: String(loan.group_id), tab: 'loans' } })
           }
@@ -272,24 +351,13 @@ const groupedSavings: Record<string, number> = {};
   </View>
 )}
 
-        {contributionsByGroup.length > 1 && (
+          {groupSavings.length > 0 && (
           <View style={styles.section}>
-            <Text style={[styles.sectionHeader, { color: colors.text }]}>Savings by Group</Text>
-           {contributionsByGroup.map((g) => (
-  <View key={g.groupName} style={[styles.rowCard, { backgroundColor: colors.surface }]}>
-    <View style={styles.progressHeaderRow}>
-      <Text style={[styles.rowCardTitle, { color: colors.text }]}>{g.groupName}</Text>
-      <Text style={[styles.rowCardTitle, { color: colors.primary }]}>
-        KES {g.total.toLocaleString()}
-      </Text>
-    </View>
-    {g.extra > 0 && (
-      <Text style={[styles.rowCardSubtitle, { color: colors.textMuted, marginTop: 0 }]}>
-        KES {g.contributions.toLocaleString()} contributions + KES {g.extra.toLocaleString()} extra
-      </Text>
-    )}
-  </View>
-))}
+            <SectionHeader title="Savings by Group" actionLabel="All groups" onAction={() => router.push('/(tabs)/groups')} />
+            <GroupCarousel
+              items={groupSavings}
+              onPress={(g) => (g.groupId ? openGroup(g.groupId) : router.push('/(tabs)/groups'))}
+            />
           </View>
         )}
 
@@ -334,7 +402,7 @@ const groupedSavings: Record<string, number> = {};
            {dueStatus.map((d: any) => (
   <TouchableOpacity
     key={d.groupId}
-    style={[styles.rowCard, styles.loanRowCard, { backgroundColor: colors.surface }]}
+    style={[styles.rowCard, styles.loanRowCard, { backgroundColor: colors.surface, borderLeftWidth: 4, borderLeftColor: colors.warning }]}
     onPress={() => router.push({ pathname: '/group/[id]', params: { id: String(d.groupId), tab: 'contributions' } })}
   >
     <View style={{ flex: 1 }}>
@@ -348,38 +416,9 @@ const groupedSavings: Record<string, number> = {};
     <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
   </TouchableOpacity>
 ))}
-          </View>
-        )}
-
-        {targetProgress.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionHeader, { color: colors.text }]}>Savings Target Progress</Text>
-            {targetProgress.map((p: any) => {
-              const pct = p.targetToDate > 0 ? Math.min((p.paidToDate / p.targetToDate) * 100, 100) : 0;
-              return (
-               <TouchableOpacity
-  key={p.groupId}
-  style={[styles.rowCard, styles.loanRowCard, { backgroundColor: colors.surface }]}
-  onPress={() => router.push({ pathname: '/group/[id]', params: { id: String(p.groupId), tab: 'target' } })}
->
-  <View style={{ flex: 1 }}>
-    <View style={styles.progressHeaderRow}>
-      <Text style={[styles.rowCardTitle, { color: colors.text }]}>{p.groupName}</Text>
-      <Text style={[styles.progressStatus, { color: p.onTrack ? colors.success : colors.danger }]}>
-        {p.onTrack ? 'ON TRACK' : `BEHIND KES ${p.shortfall}`}
-      </Text>
-    </View>
-    <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-      <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: colors.primary }]} />
-    </View>
-  </View>
-  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-</TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
+</View>
+ )}
+        
         {recentActivity.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
@@ -388,9 +427,16 @@ const groupedSavings: Record<string, number> = {};
                 <Text style={[styles.seeAll, { color: colors.primary }]}>See all</Text>
               </TouchableOpacity>
             </View>
-            {recentActivity.map((item: any) => (
-              <View key={item.id} style={[styles.activityRow, { borderBottomColor: colors.border }]}>
-                <View style={[styles.iconWrap, { backgroundColor: colors.surface }]}>
+                        {recentActivity.map((item: any) => (
+              <View
+                key={item.id}
+                style={[
+                  styles.rowCard,
+                  styles.loanRowCard,
+                  { backgroundColor: colors.surface, borderLeftWidth: 4, borderLeftColor: colors.primary, alignItems: 'flex-start' }
+                ]}
+              >
+                <View style={[styles.iconWrap, { backgroundColor: colors.primary + '1a' }]}>
                   <Ionicons name={(ACTIVITY_ICONS[item.action_type] || 'ellipse') as any} size={16} color={colors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -406,7 +452,7 @@ const groupedSavings: Record<string, number> = {};
 
         {latestNotification && (
           <TouchableOpacity
-            style={[styles.rowCard, { backgroundColor: colors.surface, marginBottom: 20 }]}
+            style={[styles.rowCard, { backgroundColor: colors.surface, marginBottom: 20, borderLeftWidth: 4, borderLeftColor: latestNotification.is_read ? colors.border : colors.warning }]}
             onPress={() => router.push('/notifications')}
           >
             <View style={styles.sectionHeaderRow}>
@@ -426,22 +472,46 @@ const groupedSavings: Record<string, number> = {};
           </TouchableOpacity>
         )}
 
-        <Text style={[styles.sectionHeader, { color: colors.text }]}>Quick Actions</Text>
-        <View style={styles.actionsGrid}>
+               <Text style={[styles.sectionHeader, { color: colors.text }]}>Get Started</Text>
+        <View style={{ flexDirection: 'row', gap: 12, marginBottom: 90 }}>
           <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: colors.surfaceAlt }]}
+            style={[styles.rowCard, { flex: 1, backgroundColor: colors.primary + '1a', borderWidth: 1, borderColor: colors.primary + '55', alignItems: 'center', paddingVertical: 20, marginBottom: 0 }]}
             onPress={() => router.push('/create-group')}
+            activeOpacity={0.8}
           >
+            <View style={[styles.iconWrap, { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary + '26', marginBottom: 8 }]}>
+              <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
+            </View>
             <Text style={[styles.actionText, { color: colors.text }]}>Create Group</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>Start a new chama</Text>
           </TouchableOpacity>
+
           <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: colors.surfaceAlt }]}
+            style={[styles.rowCard, { flex: 1, backgroundColor: colors.success + '1a', borderWidth: 1, borderColor: colors.success + '55', alignItems: 'center', paddingVertical: 20, marginBottom: 0 }]}
             onPress={() => router.push('/join-group')}
+            activeOpacity={0.8}
           >
+            <View style={[styles.iconWrap, { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.success + '26', marginBottom: 8 }]}>
+              <Ionicons name="enter-outline" size={24} color={colors.success} />
+            </View>
             <Text style={[styles.actionText, { color: colors.text }]}>Join Group</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>Use an invite link</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <>
+      <GroupPickerSheet
+        visible={picker !== null}
+        title={picker?.title || ''}
+        groups={picker?.groups || []}
+        onPick={(g) => {
+          const p = picker;
+          setPicker(null);
+          if (p) goTo(p.tab, p.action, g);
+        }}
+        onClose={() => setPicker(null)}
+      />
+      </>
     </SafeAreaView>
   );
 }
@@ -450,7 +520,15 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, padding: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  topRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  paddingHorizontal: 20,
+  paddingTop: 8,
+  paddingBottom: 12,
+  borderBottomWidth: StyleSheet.hairlineWidth
+},
   greeting: { fontSize: 26, fontWeight: 'bold' },
   subGreeting: { fontSize: 14, marginTop: 4 },
   headerIcons: { flexDirection: 'row', gap: 14 },
