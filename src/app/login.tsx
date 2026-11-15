@@ -51,7 +51,7 @@ router.replace('/');
 
         <View style={[styles.card, { backgroundColor: colors.surface }]}>
           <Text style={[styles.welcome, { color: colors.text }]}>Welcome back</Text>
-          <Text style={[styles.subtext, { color: colors.textMuted }]}>Log in to manage your chama</Text>
+          <Text style={[styles.subtext, { color: colors.textMuted }]}>Log in to manage your chama(s)</Text>
 
           <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.background }]}>
             <Ionicons name="mail-outline" size={18} color={colors.textMuted} style={styles.inputIcon} />

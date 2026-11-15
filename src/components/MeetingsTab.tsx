@@ -12,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
+  Share,
   View
 } from 'react-native';
 import { useAppTheme } from '../../context/ThemeContext';
@@ -50,9 +51,12 @@ type Detail = {
   attendance: AttendanceRow[];
 };
 
-type Props = { groupId: string };
+type Props = { groupId: string; groupName?: string };
 
-const RECORD_FROM_HOURS = 12;
+const RECORD_FROM_HOURS = 0;
+
+// Stable text form of the marks, to tell whether anything changed since the last save
+const markKey = (m: Record<number, string>) => JSON.stringify(Object.entries(m).sort());
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleString('en-KE', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Nairobi' });
@@ -74,7 +78,7 @@ const toIso = (date: string, time: string): string | null => {
   return isNaN(d.getTime()) ? null : d.toISOString();
 };
 
-export default function MeetingsTab({ groupId }: Props) {
+export default function MeetingsTab({ groupId, groupName }: Props) {
   const { colors } = useAppTheme();
 
   const [loading, setLoading] = useState(true);
@@ -105,6 +109,7 @@ export default function MeetingsTab({ groupId }: Props) {
   const [marks, setMarks] = useState<Record<number, string>>({});
   const [minutesText, setMinutesText] = useState('');
   const [editingMinutes, setEditingMinutes] = useState(false);
+  const [savedKey, setSavedKey] = useState('[]');
 
   // apology reason form
   const [apologyFor, setApologyFor] = useState<number | null>(null);
@@ -218,6 +223,7 @@ export default function MeetingsTab({ groupId }: Props) {
         if (a.status) m[a.userId] = a.status;
       });
       setMarks(m);
+      setSavedKey(markKey(m));
       setMinutesText(d.meeting.minutes || '');
       setEditingMinutes(false);
     } catch (err: any) {
@@ -283,6 +289,10 @@ export default function MeetingsTab({ groupId }: Props) {
 
   const submitAttendance = async () => {
     if (!detail || busy) return;
+    if (Object.keys(marks).length === 0) {
+      showAlert('Nothing to save', 'Mark at least one member first');
+      return;
+    }
     setBusy(true);
     try {
       // everyone listed: unmarked members are cleared so a correction really removes the mark
@@ -297,8 +307,32 @@ export default function MeetingsTab({ groupId }: Props) {
     }
   };
 
+  const shareMinutes = async () => {
+    if (!detail) return;
+    const d = detail.meeting;
+    const names = (s: string) => detail.attendance.filter((a) => a.status === s).map((a) => a.name);
+    const line = (label: string, list: string[]) => (list.length ? `${label} (${list.length}): ${list.join(', ')}` : '');
+    const attendance = [line('Present', names('present')), line('Apologies', names('apology')), line('Absent', names('absent'))]
+      .filter(Boolean)
+      .join('\n');
+    const text =
+      `${groupName ? groupName + ' - ' : ''}Minutes of "${d.title}"\n` +
+      `${fmtDate(d.meetingDate)}${d.venue ? ' · ' + d.venue : ''}\n\n` +
+      (attendance ? `${attendance}\n\n` : '') +
+      `Minutes:\n${d.minutes || ''}`;
+    try {
+      await Share.share({ message: text });
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Could not share the minutes');
+    }
+  };
+
   const submitMinutes = async () => {
     if (!detail || busy) return;
+    if (!minutesText.trim()) {
+      showAlert('Minutes are empty', 'Write the minutes before saving');
+      return;
+    }
     setBusy(true);
     try {
       await saveMinutes(detail.meeting.id, minutesText);
@@ -582,7 +616,7 @@ export default function MeetingsTab({ groupId }: Props) {
                       <Text style={[styles.label, { color: colors.textSecondary, marginTop: 18 }]}>Attendance</Text>
                       {detail.canRecord && !recordingOpen && (
                         <Text style={[styles.hint, { color: colors.textMuted, textAlign: 'left' }]}>
-                          You can mark attendance and write minutes from {RECORD_FROM_HOURS} hours before the meeting.
+                         You can mark attendance and write minutes once the meeting starts.
                         </Text>
                       )}
                       {detail.attendance.map((a) => {
@@ -619,11 +653,21 @@ export default function MeetingsTab({ groupId }: Props) {
                           </View>
                         );
                       })}
-                      {detail.canRecord && recordingOpen && (
-                        <TouchableOpacity style={[styles.primary, { backgroundColor: colors.primary, opacity: busy ? 0.6 : 1 }]} onPress={submitAttendance} disabled={busy}>
-                          <Text style={{ color: colors.primaryText, fontWeight: '600' }}>Save attendance</Text>
-                        </TouchableOpacity>
-                      )}
+                      {detail.canRecord && recordingOpen && (() => {
+                        const unchanged = markKey(marks) === savedKey;
+                        const hadSaved = savedKey !== '[]';
+                        return (
+                          <TouchableOpacity
+                            style={[styles.primary, { backgroundColor: unchanged ? colors.border : colors.primary, opacity: busy ? 0.6 : 1 }]}
+                            onPress={submitAttendance}
+                            disabled={busy || unchanged}
+                          >
+                            <Text style={{ color: unchanged ? colors.textMuted : colors.primaryText, fontWeight: '600' }}>
+                              {unchanged ? (hadSaved ? 'Attendance saved' : 'Mark members to save') : hadSaved ? 'Update attendance' : 'Save attendance'}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })()}
                     </>
                   )}
 
@@ -644,6 +688,9 @@ export default function MeetingsTab({ groupId }: Props) {
                       ) : (
                         <>
                           <Text style={[styles.body, { color: colors.text }]}>{d.minutes}</Text>
+                          <TouchableOpacity onPress={shareMinutes} style={[styles.outline, { borderColor: colors.primary, marginTop: 12 }]}>
+                            <Text style={{ color: colors.primary, fontWeight: '600' }}>Share minutes</Text>
+                          </TouchableOpacity>
                           {detail.canRecord && recordingOpen && (
                             <TouchableOpacity onPress={() => setEditingMinutes(true)} style={{ marginTop: 8 }}>
                               <Text style={{ color: colors.primary, fontWeight: '600' }}>Edit minutes</Text>

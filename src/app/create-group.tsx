@@ -39,7 +39,6 @@ export default function CreateGroupScreen() {
         headerLeft: () => (
           <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Ionicons name="chevron-back" size={24} color={colors.primary} />
-            <Text style={{ color: colors.primary, fontSize: 17, marginLeft: 2 }}>Back</Text>
           </TouchableOpacity>
         )
       }}
@@ -128,7 +127,7 @@ export default function CreateGroupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  container: { flexGrow: 1, justifyContent: 'flex-start',  padding: 20, paddingTop: 32 },
   headerBlock: { marginBottom: 16, alignItems: 'center' },
   title: { fontSize: 24, fontWeight: 'bold', marginBottom: 4, textAlign: 'center' },
   subtext: { fontSize: 13, textAlign: 'center' },

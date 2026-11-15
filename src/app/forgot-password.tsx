@@ -75,7 +75,7 @@ export default function ForgotPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  container: { flexGrow: 1, justifyContent: 'flex-start', padding: 24, paddingTop: 82 },
   iconBlock: { alignItems: 'center', marginBottom: 20 },
   iconCircle: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
   card: { borderRadius: 16, padding: 20 },

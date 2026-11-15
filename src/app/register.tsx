@@ -140,7 +140,7 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  container: { flexGrow: 1, justifyContent: 'flex-start', padding: 24, paddingTop: 40 },
   topBlock: { alignItems: 'center', marginBottom: 8 },
   card: { borderRadius: 16, padding: 20, marginTop: 8 },
   welcome: { fontSize: 22, fontWeight: 'bold', marginBottom: 4 },

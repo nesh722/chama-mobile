@@ -44,7 +44,6 @@ export default function EditProfileScreen() {
         headerLeft: () => (
           <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Ionicons name="chevron-back" size={24} color={colors.primary} />
-            <Text style={{ color: colors.primary, fontSize: 17, marginLeft: 2 }}>Back</Text>
           </TouchableOpacity>
         )
       }}
@@ -98,7 +97,7 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  container: { flexGrow: 1, justifyContent: 'flex-start', padding: 24, paddingTop: 52 },
   iconBlock: { alignItems: 'center', marginBottom: 20 },
   iconCircle: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
   card: { borderRadius: 16, padding: 20 },

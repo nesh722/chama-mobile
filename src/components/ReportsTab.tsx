@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing';
 import { getReport, getExportDownloadConfig } from '../../services/reportService';
 import { showAlert } from '../../services/alertService';
 import { useAppTheme } from '../../context/ThemeContext';
+import { Ionicons } from '@expo/vector-icons';
 
 const REPORT_TYPES = [
   { key: 'summary', label: 'Full Summary' },
@@ -24,6 +25,19 @@ function exportFileName(groupName: string, type: string, format: string) {
   const d = new Date();
   const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return `${slug}_${type.replace(/_/g, '-')}_${date}.${format}`;
+}
+
+// "loan_disbursement" -> "Loan disbursement"; money columns get thousands separators
+function formatCell(cell: any, column: string) {
+  if (cell === null || cell === undefined || cell === '') return '-';
+  if (typeof cell === 'string' && /^[a-z]+(_[a-z]+)*$/.test(cell)) {
+    const text = cell.replace(/_/g, ' ');
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+  if (/amount|total|paid|balance|outstanding|principal|interest|remaining|shortfall/i.test(column) && !isNaN(Number(cell))) {
+    return Number(cell).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  return String(cell);
 }
 
 export default function ReportsTab({ groupId, groupName }: { groupId: string; groupName: string }) {
@@ -87,19 +101,16 @@ const handleExport = async (format: 'csv' | 'pdf') => {
     <View style={styles.container}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeRow}>
         {REPORT_TYPES.map((rt) => (
-          <TouchableOpacity
+            <TouchableOpacity
             key={rt.key}
             onPress={() => handleSelectType(rt.key)}
+            activeOpacity={0.8}
             style={[
               styles.typeChip,
-              { borderColor: colors.primary },
-              selectedType === rt.key && { backgroundColor: colors.primary }
+              { backgroundColor: selectedType === rt.key ? colors.primary + '26' : colors.surface }
             ]}
           >
-            <Text style={[
-              styles.typeChipText,
-              { color: selectedType === rt.key ? colors.background : colors.primary }
-            ]}>
+            <Text style={[styles.typeChipText, { color: selectedType === rt.key ? colors.primary : colors.textSecondary }]}>
               {rt.label}
             </Text>
           </TouchableOpacity>
@@ -113,25 +124,23 @@ const handleExport = async (format: 'csv' | 'pdf') => {
           <Text style={[styles.reportTitle, { color: colors.text }]}>{report.title}</Text>
 
           <View style={styles.exportRow}>
-            <TouchableOpacity
-              style={[styles.exportButton, { borderColor: colors.primary }]}
-              onPress={() => handleExport('csv')}
-              disabled={exporting}
-            >
-              <Text style={[styles.exportButtonText, { color: colors.primary }]}>Export CSV</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.exportButton, { borderColor: colors.primary }]}
-              onPress={() => handleExport('pdf')}
-              disabled={exporting}
-            >
-              <Text style={[styles.exportButtonText, { color: colors.primary }]}>Export PDF</Text>
-            </TouchableOpacity>
+              {(['csv', 'pdf'] as const).map((f) => (
+              <TouchableOpacity
+                key={f}
+                style={[styles.exportButton, { backgroundColor: colors.primary + '1a', opacity: exporting ? 0.6 : 1 }]}
+                onPress={() => handleExport(f)}
+                disabled={exporting}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="download-outline" size={16} color={colors.primary} />
+                <Text style={[styles.exportButtonText, { color: colors.primary }]}>Export {f.toUpperCase()}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={true}>
             <View>
-              <View style={[styles.tableRow, styles.tableHeaderRow, { borderColor: colors.surfaceAlt }]}>
+              <View style={[styles.tableRow, styles.tableHeaderRow, { borderColor: colors.border }]}>
                 {report.columns.map((col: string, i: number) => (
                   <Text key={i} style={[styles.tableCell, styles.tableHeaderCell, { color: colors.text }]}>
                     {col}
@@ -142,10 +151,10 @@ const handleExport = async (format: 'csv' | 'pdf') => {
                 <Text style={[styles.empty, { color: colors.textMuted }]}>No data for this report.</Text>
               ) : (
                 report.rows.map((row: any[], rIdx: number) => (
-                  <View key={rIdx} style={[styles.tableRow, { borderColor: colors.surfaceAlt }]}>
+                  <View key={rIdx} style={[styles.tableRow, { borderColor: colors.border }]}>
                     {row.map((cell, cIdx) => (
                       <Text key={cIdx} style={[styles.tableCell, { color: colors.textSecondary }]}>
-  {cell === null || cell === undefined || cell === '' ? '-' : String(cell)}
+ {formatCell(cell, report.columns[cIdx])}
 </Text>
                     ))}
                   </View>
@@ -162,15 +171,15 @@ const handleExport = async (format: 'csv' | 'pdf') => {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 12 },
   typeRow: { flexGrow: 0, marginBottom: 16 },
-  typeChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, marginRight: 8 },
-  typeChipText: { fontSize: 13, fontWeight: '600' },
+  typeChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, marginRight: 8 },
+  typeChipText: { fontSize: 12, fontWeight: '700' },
   reportTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
   exportRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  exportButton: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, borderWidth: 1 },
+  exportButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12 },
   exportButtonText: { fontSize: 13, fontWeight: '600' },
   tableRow: { flexDirection: 'row', borderBottomWidth: 1, paddingVertical: 10 },
   tableHeaderRow: { borderBottomWidth: 2 },
-  tableCell: { width: 120, fontSize: 13, paddingHorizontal: 8 },
-  tableHeaderCell: { fontWeight: '700' },
+  tableCell: { width: 130, fontSize: 13, paddingHorizontal: 8 },
+  tableHeaderCell: { fontWeight: '700', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
   empty: { textAlign: 'center', marginTop: 20, paddingHorizontal: 8 }
 });

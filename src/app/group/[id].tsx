@@ -1195,7 +1195,6 @@ const cycleProgressText = cycleProgress
     headerLeft: () => (
       <TouchableOpacity onPress={() => router.replace('/(tabs)/groups')} style={{ flexDirection: 'row', alignItems: 'center' }}>
         <Ionicons name="chevron-back" size={24} color={colors.primary} />
-        <Text style={{ color: colors.primary, fontSize: 17, marginLeft: 2 }}>Back</Text>
       </TouchableOpacity>
     )
   }}
@@ -1223,10 +1222,26 @@ const cycleProgressText = cycleProgress
           <View>
             {activeTab === 'overview' && (
               <View>
-                <TouchableOpacity onPress={handleShowInvite}>
-                  <Text style={[styles.logToggle, { color: colors.primary, marginTop: 8 }]}>
-                    {showInvite ? 'Hide Invite QR / Link' : 'Show Invite QR / Link'}
+               <TouchableOpacity
+                  onPress={handleShowInvite}
+                  activeOpacity={0.8}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                    backgroundColor: colors.primary + '1a',
+                    borderWidth: 1,
+                    borderColor: colors.primary + '55',
+                    borderRadius: 14,
+                    padding: 14,
+                    marginBottom: 16
+                  }}
+                >
+                  <Ionicons name="person-add-outline" size={20} color={colors.primary} />
+                  <Text style={{ flex: 1, color: colors.text, fontWeight: '600', fontSize: 15 }}>
+                    {showInvite ? 'Hide invite' : 'Invite members'}
                   </Text>
+                  <Ionicons name={showInvite ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
                 </TouchableOpacity>
 
                 {showInvite && (
@@ -1363,25 +1378,31 @@ const cycleProgressText = cycleProgress
   </View>
 )}
 
-                {contributions.map((item: any) => (
-                  <View key={item.id} style={[styles.contribRow, { borderBottomColor: colors.border }]}>
-                    <View>
-                      <Text style={[styles.contribName, { color: colors.text }]}>{item.full_name}</Text>
-                     <Text style={[styles.contribCycle, { color: colors.textMuted }]}>{formatCycleLabel(item.cycle_period)}</Text>
+                               {contributions.map((item: any) => {
+                  const tone = item.status === 'paid' ? colors.success : item.status === 'partial' ? colors.warning : colors.danger;
+                  return (
+                    <View
+                      key={item.id}
+                      style={[styles.contribCard, { backgroundColor: colors.surface, borderLeftColor: tone }]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.contribName, { color: colors.text }]}>{item.full_name}</Text>
+                        <Text style={[styles.contribCycle, { color: colors.textMuted }]}>{formatCycleLabel(item.cycle_period)}</Text>
+                        {item.status === 'partial' && (
+                          <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
+                            KES {Math.max(parseFloat(group.contribution_amount) - parseFloat(item.amount), 0)} remaining
+                          </Text>
+                        )}
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                        <Text style={[styles.contribAmount, { color: colors.text, marginTop: 0 }]}>KES {item.amount}</Text>
+                        <View style={[styles.statusPill, { backgroundColor: tone + '1f' }]}>
+                          <Text style={[styles.statusPillText, { color: tone }]}>{item.status}</Text>
+                        </View>
+                      </View>
                     </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={[styles.contribAmount, { color: colors.text }]}>KES {item.amount}</Text>
-                      <Text style={[styles.contribStatus, { color: item.status === 'paid' ? colors.success : item.status === 'partial' ? colors.warning : colors.danger }]}>
-  {item.status}
-</Text>
-{item.status === 'partial' && (
-  <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
-    KES {Math.max(parseFloat(group.contribution_amount) - parseFloat(item.amount), 0)} remaining
-  </Text>
-)}
-                    </View>
-                  </View>
-                ))}
+                  );
+                })}
                 {contributions.length === 0 && (
                   <Text style={[styles.empty, { color: colors.textMuted }]}>No contributions logged yet.</Text>
                 )}
@@ -1479,8 +1500,8 @@ const cycleProgressText = cycleProgress
   const overdue = isOverdue(loan);
   const statusLabel = overdue ? 'overdue' : loan.status;
   const statusColors: Record<string, string> = {
-    approved: colors.success,
-    repaid: colors.primary,
+    approved: colors.primary,
+    repaid: colors.success,
     requested: colors.warning,
     rejected: colors.danger,
     overdue: colors.danger
@@ -1493,7 +1514,7 @@ const cycleProgressText = cycleProgress
   const progress = owedTotal > 0 ? Math.min(parseFloat(loan.totalRepaid) / owedTotal, 1) : 0;
 
   return (
-    <View key={loan.id} style={[styles.loanCard, { backgroundColor: colors.surfaceAlt }]}>
+    <View key={loan.id} style={[styles.loanCard, { backgroundColor: colors.surface, borderLeftWidth: 4, borderLeftColor: tone }]}>
       <View style={styles.loanRow}>
         <Text style={[styles.contribName, { color: colors.text }]}>{loan.full_name}</Text>
         <View style={[styles.statusPill, { backgroundColor: tone + '1f' }]}>
@@ -1624,16 +1645,23 @@ const cycleProgressText = cycleProgress
 )}
                 </View>
 
-                {rotation.map((r: any) => (
-                  <View key={r.id} style={[styles.memberRow, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.memberName, { color: colors.text }]}>
-                      {r.rotation_order}. {r.full_name}
-                    </Text>
-                    <Text style={[styles.contribStatus, { color: r.has_received ? colors.success : colors.danger }]}>
-                      {r.has_received ? 'RECEIVED' : 'PENDING'}
-                    </Text>
-                  </View>
-                ))}
+                  {rotation.map((r: any) => {
+                  const nextId = rotation.find((x: any) => !x.has_received)?.id;
+                  const isNext = !r.has_received && r.id === nextId;
+                  const tone = r.has_received ? colors.success : isNext ? colors.primary : colors.textMuted;
+                  const label = r.has_received ? 'RECEIVED' : isNext ? 'NEXT' : 'WAITING';
+                  return (
+                    <View key={r.id} style={[styles.contribCard, { backgroundColor: colors.surface, borderLeftColor: tone }]}>
+                      <View style={[styles.rotationNo, { backgroundColor: tone + '24' }]}>
+                        <Text style={{ color: tone, fontWeight: '800', fontSize: 13 }}>{r.rotation_order}</Text>
+                      </View>
+                      <Text style={[styles.memberName, { color: colors.text, flex: 1, fontWeight: '600' }]}>{r.full_name}</Text>
+                      <View style={[styles.statusPill, { backgroundColor: tone + '1f' }]}>
+                        <Text style={[styles.statusPillText, { color: tone }]}>{label}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
                 {rotation.length === 0 && <Text style={[styles.empty, { color: colors.textMuted }]}>No rotation set up yet.</Text>}
 
                 {rotation.length > 0 && rotation.some((r: any) => !r.has_received) && renderPayoutApproval()}
@@ -1667,22 +1695,31 @@ const cycleProgressText = cycleProgress
 
                 {rotationCycles.length > 0 && (
   <View style={{ marginTop: 20 }}>
-    <TouchableOpacity onPress={() => setShowRotationHistory(!showRotationHistory)}>
-      <Text style={[styles.logToggle, { color: colors.primary }]}>
+    <TouchableOpacity
+      onPress={() => setShowRotationHistory(!showRotationHistory)}
+      activeOpacity={0.8}
+      style={[styles.historyToggle, { backgroundColor: colors.surface }]}
+    >
+      <Ionicons name="time-outline" size={18} color={colors.primary} />
+      <Text style={[styles.historyToggleText, { color: colors.text }]}>
         {showRotationHistory
-          ? 'Hide Payout History'
-          : `View Payout History (${rotationCycles.length} past ${rotationCycles.length === 1 ? 'cycle' : 'cycles'})`}
+          ? 'Hide payout history'
+          : `Payout history (${rotationCycles.length} past ${rotationCycles.length === 1 ? 'cycle' : 'cycles'})`}
       </Text>
+      <Ionicons name={showRotationHistory ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
     </TouchableOpacity>
 
-    {showRotationHistory && rotationCycles.map((c: any) => (
-      <View key={c.cycle} style={{ marginTop: 12 }}>
-        <Text style={[styles.sectionHeader, { color: colors.text, fontSize: 15 }]}>
-          Cycle {c.cycle}
+      {showRotationHistory && rotationCycles.map((c: any) => (
+      <View key={c.cycle} style={{ marginTop: 14 }}>
+        <Text style={{ color: colors.textMuted, fontSize: 12, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 }}>
+          CYCLE {c.cycle}
         </Text>
         {c.rows.map((r: any) => (
-          <View key={r.id} style={[styles.contribRow, { borderBottomColor: colors.border }]}>
-            <View>
+          <View
+            key={r.id}
+            style={[styles.contribCard, { backgroundColor: colors.surface, borderLeftColor: r.has_received ? colors.success : colors.border }]}
+          >
+            <View style={{ flex: 1 }}>
               <Text style={[styles.contribName, { color: colors.text }]}>
                 {r.rotation_order}. {r.full_name}
               </Text>
@@ -1692,13 +1729,15 @@ const cycleProgressText = cycleProgress
                 </Text>
               )}
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
+            <View style={{ alignItems: 'flex-end', gap: 6 }}>
               {r.has_received && r.amount != null && (
-                <Text style={[styles.contribAmount, { color: colors.text }]}>KES {r.amount}</Text>
+                <Text style={[styles.contribAmount, { color: colors.text, marginTop: 0 }]}>KES {r.amount}</Text>
               )}
-              <Text style={[styles.contribStatus, { color: r.has_received ? colors.success : colors.textMuted }]}>
-                {r.has_received ? 'RECEIVED' : 'NOT PAID'}
-              </Text>
+              <View style={[styles.statusPill, { backgroundColor: (r.has_received ? colors.success : colors.textMuted) + '1f' }]}>
+                <Text style={[styles.statusPillText, { color: r.has_received ? colors.success : colors.textMuted }]}>
+                  {r.has_received ? 'RECEIVED' : 'NOT PAID'}
+                </Text>
+              </View>
             </View>
           </View>
         ))}
@@ -1756,19 +1795,31 @@ const cycleProgressText = cycleProgress
                     <Text style={[styles.contribCycle, { color: colors.textMuted, marginBottom: 8 }]}>
                       Progress below includes both regular contributions and extra savings
                     </Text>
-                    {savingsData.progress.map((p: any) => (
-                      <View key={p.id} style={[styles.memberRow, { borderBottomColor: colors.border }]}>
-                        <View>
-                          <Text style={[styles.memberName, { color: colors.text }]}>{p.full_name}</Text>
+                      {savingsData.progress.map((p: any) => {
+                      const pct = parseFloat(p.targetToDate) > 0 ? Math.min((parseFloat(p.paidToDate) / parseFloat(p.targetToDate)) * 100, 100) : 100;
+                      const tone = p.onTrack ? colors.success : colors.danger;
+                      return (
+                        <View
+                          key={p.id}
+                          style={[styles.contribCard, { backgroundColor: colors.surface, borderLeftColor: tone, flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}
+                        >
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={[styles.memberName, { color: colors.text, fontWeight: '600' }]}>{p.full_name}</Text>
+                            <View style={[styles.statusPill, { backgroundColor: tone + '1f' }]}>
+                              <Text style={[styles.statusPillText, { color: tone }]}>
+                                {p.onTrack ? 'ON TRACK' : `BEHIND KES ${p.shortfall}`}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' }}>
+                            <View style={{ height: 6, borderRadius: 3, width: `${pct}%`, backgroundColor: tone }} />
+                          </View>
                           <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
                             Paid KES {p.paidToDate} of KES {p.targetToDate}
                           </Text>
                         </View>
-                        <Text style={[styles.contribStatus, { color: p.onTrack ? colors.success : colors.danger }]}>
-                          {p.onTrack ? 'ON TRACK' : `BEHIND KES ${p.shortfall}`}
-                        </Text>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </>
                 ) : (
                   <Text style={[styles.empty, { color: colors.textMuted }]}>No savings target set for this group yet.</Text>
@@ -1776,23 +1827,30 @@ const cycleProgressText = cycleProgress
 
                 {targetHistory.length > 0 && (
                   <View style={{ marginTop: 20 }}>
-                    <TouchableOpacity onPress={() => setShowTargetHistory(!showTargetHistory)}>
-                      <Text style={[styles.logToggle, { color: colors.primary }]}>
-                        {showTargetHistory ? 'Hide Target History' : `View Target History (${targetHistory.length})`}
+                      <TouchableOpacity
+                      onPress={() => setShowTargetHistory(!showTargetHistory)}
+                      activeOpacity={0.8}
+                      style={[styles.historyToggle, { backgroundColor: colors.surface }]}
+                    >
+                      <Ionicons name="time-outline" size={18} color={colors.primary} />
+                      <Text style={[styles.historyToggleText, { color: colors.text }]}>
+                        {showTargetHistory ? 'Hide target history' : `Target history (${targetHistory.length})`}
                       </Text>
+                      <Ionicons name={showTargetHistory ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
                     </TouchableOpacity>
-
                     {showTargetHistory && targetHistory.map((h: any) => (
-                      <View key={h.id} style={[styles.contribRow, { borderBottomColor: colors.border }]}>
-                        <View>
+                      <View key={h.id} style={[styles.contribCard, { backgroundColor: colors.surface, borderLeftColor: colors.border, marginTop: 8 }]}>
+                        <View style={{ flex: 1 }}>
                           <Text style={[styles.contribName, { color: colors.text }]}>KES {h.savings_target} per cycle</Text>
                           <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
                             {new Date(h.target_start_date).toLocaleDateString()} – {new Date(h.target_end_date).toLocaleDateString()}
                           </Text>
                         </View>
-                        <Text style={[styles.contribStatus, { color: colors.textMuted }]}>
-                          {h.ended_reason === 'replaced' ? 'REPLACED' : 'REMOVED'}
-                        </Text>
+                        <View style={[styles.statusPill, { backgroundColor: colors.textMuted + '1f' }]}>
+                          <Text style={[styles.statusPillText, { color: colors.textMuted }]}>
+                            {h.ended_reason === 'replaced' ? 'REPLACED' : 'REMOVED'}
+                          </Text>
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -1844,14 +1902,14 @@ const cycleProgressText = cycleProgress
                   </View>
                 )}
 
-                {savingsList.map((item: any) => (
-                  <View key={item.id} style={[styles.contribRow, { borderBottomColor: colors.border }]}>
-                    <View>
+                  {savingsList.map((item: any) => (
+                  <View key={item.id} style={[styles.contribCard, { backgroundColor: colors.surface, borderLeftColor: colors.primary }]}>
+                    <View style={{ flex: 1 }}>
                       <Text style={[styles.contribName, { color: colors.text }]}>{item.full_name}</Text>
                       {item.note && <Text style={[styles.contribCycle, { color: colors.textMuted }]}>{item.note}</Text>}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={[styles.contribAmount, { color: colors.text }]}>KES {item.amount}</Text>
+                      <Text style={[styles.contribAmount, { color: colors.text, marginTop: 0 }]}>KES {item.amount}</Text>
                       <Text style={[styles.contribCycle, { color: colors.textMuted }]}>
                         {new Date(item.deposited_at).toLocaleDateString()}
                       </Text>
@@ -1864,7 +1922,7 @@ const cycleProgressText = cycleProgress
               </View>
             )}
 
-     {activeTab === 'meetings' && <MeetingsTab groupId={id as string} />}
+     {activeTab === 'meetings' && <MeetingsTab groupId={id as string} groupName={group.name} />}
 
                         {activeTab === 'reports' && (
               <ReportsTab groupId={id as string} groupName={group.name} />
@@ -2255,10 +2313,10 @@ const styles = StyleSheet.create({
   memberName: { fontSize: 15 },
   memberRole: { fontSize: 13, fontWeight: '600', textTransform: 'capitalize' },
   memberRoleEditable: { fontSize: 13, fontWeight: '600', textTransform: 'capitalize', textDecorationLine: 'underline' },
-  form: { padding: 16, borderRadius: 10, marginTop: 12 },
-  input: { borderWidth: 1, borderRadius: 8, padding: 10, marginBottom: 12 },
-  submitButton: { padding: 12, borderRadius: 8, alignItems: 'center' },
-  submitButtonSmall: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, alignItems: 'center' },
+  form: { padding: 16, borderRadius: 14, marginTop: 12, marginBottom: 12 },
+  input: { borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 12 },
+  submitButton: { padding: 14, borderRadius: 12, alignItems: 'center' },
+  submitButtonSmall: { paddingVertical: 11, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center' },
   submitButtonText: { fontWeight: '600' },
   contribRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1 },
   contribName: { fontSize: 15, fontWeight: '500' },
@@ -2266,7 +2324,7 @@ const styles = StyleSheet.create({
   contribAmount: { fontSize: 15, fontWeight: '600', marginTop: 4 },
   contribStatus: { fontSize: 12, fontWeight: '600', marginTop: 2, textTransform: 'uppercase' },
   empty: { textAlign: 'center', marginTop: 12, marginBottom: 12 },
-  loanCard: { borderRadius: 10, padding: 14, marginBottom: 10 },
+  loanCard: { borderRadius: 14, padding: 14, marginBottom: 10 },
   loanRow: { flexDirection: 'row', justifyContent: 'space-between' },
   loanActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
   approveButton: { flex: 1, padding: 10, borderRadius: 8, alignItems: 'center' },
@@ -2332,4 +2390,8 @@ mpesaSmall: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertica
 transferCard: { borderRadius: 10, borderWidth: 1, padding: 12, marginTop: 12 },
 transferText: { fontSize: 13, lineHeight: 18 },
 approvalActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
+contribCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderLeftWidth: 4, marginBottom: 8 },
+rotationNo: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+historyToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 14 },
+historyToggleText: { flex: 1, fontSize: 14, fontWeight: '600' },
 });
